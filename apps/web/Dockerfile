@@ -11,8 +11,9 @@ RUN npm install --workspaces --include-workspace-root
 
 # --- build ---
 FROM base AS build
+# npm workspaces menaruh dependency di root /app/node_modules (hoisted),
+# sehingga apps/web/node_modules biasanya tidak ada.
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 COPY . .
 RUN npm run build -w apps/web
 
@@ -22,8 +23,8 @@ ENV NODE_ENV=production
 COPY --from=build /app/apps/web/.next ./apps/web/.next
 COPY --from=build /app/apps/web/public ./apps/web/public
 COPY --from=build /app/apps/web/package.json ./apps/web/package.json
+COPY --from=build /app/apps/web/next.config.mjs ./apps/web/next.config.mjs
 COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/apps/web/node_modules ./apps/web/node_modules
 WORKDIR /app/apps/web
 EXPOSE 3000
 CMD ["npm", "run", "start"]

@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { accounts, users } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { newId } from "@/lib/ids";
-import { verifyPassword } from "@/lib/password";
+import { hashPassword, needsRehash, verifyPassword } from "@/lib/password";
 import { createSession } from "@/lib/session-store";
 
 /**
@@ -40,6 +40,18 @@ const providers: NextAuthConfig["providers"] = [
 
       const valid = await verifyPassword(password, user.passwordHash);
       if (!valid) return null;
+
+      // Upgrade transparan hash lama (scrypt) ke Argon2id setelah verifikasi sukses.
+      if (needsRehash(user.passwordHash)) {
+        try {
+          await db
+            .update(users)
+            .set({ passwordHash: await hashPassword(password) })
+            .where(eq(users.id, user.id));
+        } catch {
+          // jangan gagalkan login hanya karena upgrade hash gagal
+        }
+      }
 
       return { id: user.id, email: user.email, name: user.displayName };
     },

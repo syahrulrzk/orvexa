@@ -27,9 +27,17 @@ class ToolSpec:
 
 @dataclass
 class ChatChunk:
-    """Potongan respons streaming."""
+    """Potongan respons streaming.
+
+    - ``delta``: potongan teks jawaban.
+    - ``reasoning``: potongan *reasoning/thinking* (bila provider mendukung,
+      mis. DeepSeek-R1 / Claude extended thinking).
+    - ``tool_call``: fragmen pemanggilan tool (dikumpulkan oleh agent loop).
+    - ``finish_reason`` & ``usage``: diisi pada chunk terakhir.
+    """
 
     delta: str = ""
+    reasoning: str = ""
     tool_call: dict[str, Any] | None = None
     finish_reason: str | None = None
     usage: dict[str, int] | None = None

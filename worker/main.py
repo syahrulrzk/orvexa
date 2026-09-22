@@ -15,7 +15,8 @@ from typing import Any
 import redis.asyncio as aioredis
 
 from config import settings
-from orchestrator import EventPublisher, Job, Orchestrator
+from orchestrator import Job, Orchestrator
+from runtime import InternalAPI
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,52 +47,85 @@ async def _ensure_group(redis: aioredis.Redis) -> None:
             raise
 
 
-async def _process(redis: aioredis.Redis, orchestrator: Orchestrator, entry: tuple[str, dict]) -> None:
+async def _process(orchestrator: Orchestrator, entry: tuple[str, dict[str, Any]]) -> None:
     entry_id, fields = entry
     raw = fields.get("data") or fields.get(b"data")
     if raw is None:
-        await redis.xack(settings.job_stream, settings.consumer_group, entry_id)
+        logger.warning("job %s tanpa field `data` — dilewati", entry_id)
         return
 
     try:
         payload: dict[str, Any] = json.loads(raw)
         job = Job.from_payload(payload)
         await orchestrator.handle(job)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - satu job gagal tidak boleh menghentikan worker
         logger.exception("gagal memproses job %s", entry_id)
-    finally:
-        await redis.xack(settings.job_stream, settings.consumer_group, entry_id)
 
 
 async def run() -> None:
     _install_signal_handlers()
-    logger.info("worker starting (TZ=%s)", settings.timezone)
+    logger.info(
+        "worker starting (TZ=%s, web=%s, consumer=%s)",
+        settings.timezone,
+        settings.web_url,
+        settings.consumer_name,
+    )
+
+    if not settings.internal_api_token:
+        logger.warning(
+            "INTERNAL_API_TOKEN kosong — worker tidak bisa persist run. "
+            "Set di .env agar sama dengan nilai di web."
+        )
 
     redis = aioredis.from_url(settings.redis_url, decode_responses=True)
     await _ensure_group(redis)
 
-    publisher = EventPublisher(redis)
-    orchestrator = Orchestrator(publisher)
-    consumer = f"worker-{id(redis)}"
+    async with InternalAPI(
+        settings.web_url, settings.internal_api_token, timeout=30.0
+    ) as api:
+        orchestrator = Orchestrator(
+            redis, api, timeout_seconds=settings.agent_timeout_seconds
+        )
+        consumer = settings.consumer_name
+        semaphore = asyncio.Semaphore(settings.concurrency)
 
-    try:
-        while not _shutdown.is_set():
-            entries = await redis.xreadgroup(
-                groupname=settings.consumer_group,
-                consumername=consumer,
-                streams={settings.job_stream: ">"},
-                count=settings.concurrency,
-                block=5000,
-            )
-            if not entries:
-                continue
-            for _stream, items in entries:
-                tasks = [_process(redis, orchestrator, item) for item in items]
+        async def run_one(entry: tuple[str, dict[str, Any]]) -> None:
+            entry_id = entry[0]
+            try:
+                async with semaphore:
+                    await _process(orchestrator, entry)
+            finally:
+                # ACK selalu (termasuk saat gagal) agar tidak menumpuk di PEL.
+                # Retry berjenjang akan ditambahkan bersama dead-letter (Fase 5).
+                await redis.xack(settings.job_stream, settings.consumer_group, entry_id)
+
+        try:
+            while not _shutdown.is_set():
+                try:
+                    entries = await redis.xreadgroup(
+                        groupname=settings.consumer_group,
+                        consumername=consumer,
+                        streams={settings.job_stream: ">"},
+                        count=settings.concurrency,
+                        block=5000,
+                    )
+                except aioredis.ResponseError as exc:
+                    logger.error("xreadgroup gagal: %s", exc)
+                    await asyncio.sleep(2)
+                    continue
+
+                if not entries:
+                    continue
+
+                tasks: list[asyncio.Task[None]] = []
+                for _stream, items in entries:
+                    for item in items:
+                        tasks.append(asyncio.create_task(run_one(item)))
                 if tasks:
-                    await asyncio.gather(*tasks)
-    finally:
-        await redis.aclose()
-        logger.info("worker stopped")
+                    await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            await redis.aclose()
+            logger.info("worker stopped")
 
 
 if __name__ == "__main__":

@@ -13,6 +13,12 @@ export type RoomEventType =
   | "reaction.removed"
   | "typing"
   | "agent.status"
+  | "agent.run.started"
+  | "agent.run.finished"
+  | "agent.message.started"
+  | "agent.token"
+  | "agent.message.completed"
+  | "agent.reasoning"
   | "tool.call"
   | "tool.result"
   | "task.created"
@@ -21,6 +27,7 @@ export type RoomEventType =
   | "approval.resolved"
   | "decision.created"
   | "document.created"
+  | "activity.logged"
   | "presence";
 
 export type RoomEvent = {

@@ -53,13 +53,53 @@ npm run dev          # web
 npm run dev:worker   # worker (terminal terpisah)
 ```
 
-Akses web di `http://localhost:3000`.
+Akses web di `http://localhost:3000` (login: `lead@orvexa.dev` / `orvexa12345`).
 
 ### Semua via Docker
 
 ```bash
 docker compose up --build
 ```
+
+### Agar agent bisa membalas di room (Fase 3)
+
+Agent butuh kredensial provider. Cara tercepat — isi env lalu seed:
+
+```bash
+# .env
+OPENAI_API_KEY=sk-...           # atau ANTHROPIC_API_KEY / GEMINI_API_KEY
+# LLM lokal (Ollama / llama.cpp / LM Studio):
+# LOCAL_LLM_API_KEY=ollama
+# LOCAL_LLM_BASE_URL=http://host.docker.internal:11434/v1
+
+npm run db:seed -w apps/web     # bootstrap ai_providers + ai_credentials (terenkripsi AES-256-GCM)
+```
+
+Lalu di room, mention agent: `@NOC cek bandwidth uplink 1 jam terakhir`.
+Hal-hal yang perlu diperhatikan saat mengembangkan loop agent:
+
+- **Tool dieksekusi di web** (`apps/web/src/lib/tools.ts`), bukan di Python. Worker
+  hanya menerima JSON Schema lewat `/api/internal/agents/:id/context`.
+- **Worker tidak menulis PostgreSQL langsung** — semua lewat `/api/internal/*`.
+- **Tambah provider baru**: buat implementasi di `worker/providers/`, daftarkan di
+  `get_provider()`, lalu tambahkan `kind` di enum `provider_kind` (butuh migrasi).
+
+### Menguji tanpa API key
+
+Ada mock provider OpenAI-compatible untuk menguji seluruh rantai (streaming, tool
+call, usage) secara offline:
+
+```bash
+# jalankan di network compose agar bisa dijangkau worker
+docker run -d --name orvexa-mock-llm --network orvexa_default \
+  -v "$PWD/scripts/dev:/app:ro" python:3.12-slim \
+  python /app/mock-openai-server.py --port 8089
+
+# arahkan base_url provider ke http://orvexa-mock-llm:8089/v1
+# lalu kirim pesan yang memuat kata TOOLTEST untuk menguji jalur tool call
+```
+
+`OPENAI_COMPATIBLE_API_KEY` bisa diisi nilai apa pun (mock tidak memvalidasi).
 
 ---
 

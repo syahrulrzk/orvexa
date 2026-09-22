@@ -228,6 +228,10 @@ export function RoomView({
     Object.fromEntries(agents.map((a) => [a.id, a.status])),
   );
   const [typing, setTyping] = useState<Record<string, { name: string; at: number }>>({});
+  // Bubble streaming agent (Fase 3): key = message_key dari worker.
+  const [live, setLive] = useState<
+    Record<string, { name: string; text: string; reasoning: string; tools: string[] }>
+  >({});
 
   const [threadRoot, setThreadRoot] = useState<RoomMessage | null>(null);
   const [threadReplies, setThreadReplies] = useState<RoomMessage[]>([]);
@@ -308,6 +312,88 @@ export function RoomView({
       };
       if (data.agent_id) {
         setAgentStatus((prev) => ({ ...prev, [data.agent_id!]: data.payload?.status ?? "idle" }));
+      }
+    });
+
+    // --- Streaming agent (Fase 3) ---
+    source.addEventListener("agent.message.started", (event) => {
+      const data = JSON.parse((event as MessageEvent).data) as {
+        agent_id?: string;
+        payload?: { message_key?: string; agent_name?: string };
+      };
+      const key = data.payload?.message_key;
+      if (!key) return;
+      setLive((prev) => ({
+        ...prev,
+        [key]: { name: data.payload?.agent_name ?? "Agent", text: "", reasoning: "", tools: [] },
+      }));
+    });
+
+    source.addEventListener("agent.token", (event) => {
+      const data = JSON.parse((event as MessageEvent).data) as {
+        payload?: { message_key?: string; delta?: string };
+      };
+      const key = data.payload?.message_key;
+      if (!key || !data.payload?.delta) return;
+      setLive((prev) => {
+        const current = prev[key];
+        if (!current) return prev;
+        return { ...prev, [key]: { ...current, text: current.text + data.payload!.delta } };
+      });
+    });
+
+    source.addEventListener("agent.reasoning", (event) => {
+      const data = JSON.parse((event as MessageEvent).data) as {
+        payload?: { message_key?: string; delta?: string };
+      };
+      const key = data.payload?.message_key;
+      if (!key || !data.payload?.delta) return;
+      setLive((prev) => {
+        const current = prev[key];
+        if (!current) return prev;
+        return {
+          ...prev,
+          [key]: { ...current, reasoning: (current.reasoning + data.payload!.delta!).slice(-2000) },
+        };
+      });
+    });
+
+    source.addEventListener("tool.call", (event) => {
+      const data = JSON.parse((event as MessageEvent).data) as { payload?: { tool_key?: string } };
+      const tool = data.payload?.tool_key;
+      if (!tool) return;
+      setLive((prev) => {
+        const entries = Object.entries(prev);
+        if (entries.length === 0) return prev;
+        const [key, current] = entries[entries.length - 1];
+        if (current.tools.includes(tool)) return prev;
+        return { ...prev, [key]: { ...current, tools: [...current.tools, tool] } };
+      });
+    });
+
+    source.addEventListener("agent.message.completed", (event) => {
+      const data = JSON.parse((event as MessageEvent).data) as {
+        payload?: { message_key?: string };
+      };
+      const key = data.payload?.message_key;
+      if (!key) return;
+      setLive((prev) => {
+        if (!(key in prev)) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    });
+
+    source.addEventListener("agent.run.finished", (event) => {
+      const data = JSON.parse((event as MessageEvent).data) as {
+        payload?: { status?: string; error?: string };
+      };
+      const status = data.payload?.status;
+      // Run selesai/gagal → pastikan tidak ada bubble streaming yang nyangkut.
+      setLive({});
+      if (status && status !== "completed") {
+        setNotice(`Agent berhenti dengan status: ${status}${data.payload?.error ? ` — ${data.payload.error}` : ""}`);
       }
     });
 
@@ -637,6 +723,29 @@ export function RoomView({
                 />
               ))
             )}
+
+            {Object.entries(live).map(([key, item]) => (
+              <div
+                key={key}
+                className="rounded-lg border border-dashed border-border bg-canvas-subtle p-3"
+              >
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-success" aria-hidden />
+                  <span className="font-medium text-foreground">{item.name}</span>
+                  <span>sedang bekerja…</span>
+                </div>
+                {item.tools.length > 0 ? (
+                  <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                    tool: {item.tools.join(" → ")}
+                  </p>
+                ) : null}
+                {item.text ? (
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{item.text}</p>
+                ) : (
+                  <p className="mt-2 text-sm italic text-muted-foreground">menyusun jawaban…</p>
+                )}
+              </div>
+            ))}
           </div>
         )}
 

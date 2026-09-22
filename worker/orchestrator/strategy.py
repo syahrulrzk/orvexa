@@ -6,41 +6,391 @@ OpenAI Agents SDK bisa ditambahkan nanti TANPA rewrite.
 
 Cara menambah strategi baru:
     class LangGraphStrategy:  # name = "langgraph"
-        async def run(self, job, runtime) -> None: ...
-    orchestrator = Orchestrator(publisher, strategy=LangGraphStrategy(...))
+        async def run(self, job, runtime, run_ctx) -> None: ...
+    orchestrator = Orchestrator(redis, api, strategy=LangGraphStrategy(...))
 """
 
 from __future__ import annotations
 
+import json
+import logging
+import re
+import time
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from providers import Message, ToolSpec, get_provider
+from runtime import BudgetExceeded, build_messages, new_id, render_tool_result
+
 if TYPE_CHECKING:
-    from .loop import Job
+    from .loop import Job, RunContext
+
+logger = logging.getLogger("orvexa.strategy")
+
+# Model kecil / fallback teks: nama fungsi hanya boleh [a-zA-Z0-9_-],
+# sehingga "room.post" dipetakan menjadi "room__post".
+_FN_SEP = "__"
+
+
+def fn_name(tool_key: str) -> str:
+    return tool_key.replace(".", _FN_SEP).replace("-", "_")
+
+
+def tool_key_from_fn(name: str) -> str:
+    return name.replace(_FN_SEP, ".")
 
 
 @runtime_checkable
 class Strategy(Protocol):
-    """Kontrak strategi. `runtime` memberi akses ke db/redis/tools orchestrator."""
+    """Kontrak strategi. `runtime` memberi akses ke api/publisher orchestrator."""
 
     name: str
 
-    async def run(self, job: "Job", runtime: Any) -> None:
+    async def run(self, job: "Job", runtime: Any, run_ctx: "RunContext") -> None:
         ...
 
 
-class DefaultStrategy:
-    """Loop sederhana: observe → plan → act → reflect.
+class _TokenFlusher:
+    """Menahan token sebentar lalu mengirim per batch agar Redis tidak banjir."""
 
-    Implementasi penuh (LLM call, RAG, tool execution) diisi pada Fase 3.
-    """
+    def __init__(self, emit: Any, *, max_chars: int = 32, max_delay: float = 0.05) -> None:
+        self._emit = emit
+        self._buffer: list[str] = []
+        self._size = 0
+        self._last = time.monotonic()
+        self._max_chars = max_chars
+        self._max_delay = max_delay
+
+    async def push(self, text: str) -> None:
+        if not text:
+            return
+        self._buffer.append(text)
+        self._size += len(text)
+        if self._size >= self._max_chars or (time.monotonic() - self._last) >= self._max_delay:
+            await self.flush()
+
+    async def flush(self) -> None:
+        if not self._buffer:
+            return
+        payload = "".join(self._buffer)
+        self._buffer.clear()
+        self._size = 0
+        self._last = time.monotonic()
+        await self._emit(payload)
+
+
+_TOOL_JSON_RE = re.compile(r"\{[^{}]*\"tool\"\s*:[^{}]*\}", re.DOTALL)
+
+
+def _extract_text_tool_call(text: str) -> tuple[str, dict[str, Any]] | None:
+    """Fallback tool call lewat JSON di dalam teks (model tanpa function calling)."""
+    match = _TOOL_JSON_RE.search(text)
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return None
+    key = data.get("tool")
+    if not isinstance(key, str) or not key:
+        return None
+    args = data.get("args") if isinstance(data.get("args"), dict) else {}
+    return key, args
+
+
+class DefaultStrategy:
+    """Loop observe → plan → act (tool) → reflect."""
 
     name = "default"
 
-    def __init__(self, publisher: Any) -> None:
-        self._publisher = publisher
+    async def run(self, job: "Job", runtime: Any, run_ctx: "RunContext") -> None:
+        context = run_ctx.context
+        provider_cfg = context.get("provider") or {}
+        tool_defs = context.get("tools") or []
 
-    async def run(self, job: "Job", runtime: Any) -> None:
-        _ = runtime  # dipakai pada Fase 3 (db, redis, tool registry)
-        await self._publisher.agent_status(job, "thinking")
-        # TODO(Fase 3): muat konteks → LLM → tool → persist run/events
-        await self._publisher.agent_status(job, "idle")
+        provider = get_provider(
+            str(provider_cfg.get("kind") or "openai"),
+            api_key=str(provider_cfg.get("api_key") or ""),
+            base_url=provider_cfg.get("base_url"),
+            model=str(provider_cfg.get("model") or ""),
+            timeout=float(getattr(runtime, "timeout_seconds", 180)),
+        )
+
+        native_tools = bool(tool_defs) and provider.supports("tools")
+        tool_specs = (
+            [
+                ToolSpec(
+                    name=fn_name(t["key"]),
+                    description=t["description"],
+                    parameters=t["parameters"],
+                )
+                for t in tool_defs
+            ]
+            if native_tools
+            else []
+        )
+
+        messages = build_messages(context, native_tools)
+        api = run_ctx.api
+        publisher = run_ctx.publisher
+        model = str(provider_cfg.get("model") or "")
+        params = dict(provider_cfg.get("params") or {})
+
+        message_key = new_id("mkey")
+        flusher = _TokenFlusher(
+            lambda chunk: publisher.token(
+                run_ctx.room_id, job.agent_id, run_ctx.run_id, message_key, chunk
+            )
+        )
+        reasoning_flusher = _TokenFlusher(
+            lambda chunk: publisher.reasoning(
+                run_ctx.room_id, job.agent_id, run_ctx.run_id, message_key, chunk
+            )
+        )
+
+        if run_ctx.room_id:
+            await publisher.message_started(
+                run_ctx.room_id, job.agent_id, run_ctx.run_id, message_key, run_ctx.agent_name
+            )
+
+        accumulated: list[str] = []
+        used_tools = False
+
+        while True:
+            step = run_ctx.budget.start_step()
+            run_ctx.add_event("step.start", {"step": step, "model": model})
+
+            started = time.monotonic()
+            text_parts: list[str] = []
+            usage_acc = {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0}
+            raw_tool_calls: dict[int, dict[str, Any]] = {}
+            finish_reason: str | None = None
+
+            async for chunk in provider.chat(messages, model, tool_specs or None, stream=True, **params):
+                if chunk.delta:
+                    text_parts.append(chunk.delta)
+                    await flusher.push(chunk.delta)
+                if chunk.reasoning:
+                    await reasoning_flusher.push(chunk.reasoning)
+                if chunk.tool_call:
+                    self._merge_tool_call(raw_tool_calls, chunk.tool_call)
+                if chunk.usage:
+                    for key, value in chunk.usage.items():
+                        usage_acc[key] = usage_acc.get(key, 0) + int(value or 0)
+                if chunk.finish_reason:
+                    finish_reason = chunk.finish_reason
+
+            await flusher.flush()
+            await reasoning_flusher.flush()
+
+            text = "".join(text_parts).strip()
+            if text:
+                accumulated.append(text)
+
+            if usage_acc["input_tokens"] or usage_acc["output_tokens"]:
+                await self._record_usage(run_ctx, usage_acc, int((time.monotonic() - started) * 1000))
+
+            calls = self._normalize_tool_calls(raw_tool_calls)
+
+            # Fallback: model tanpa function calling menulis JSON di teks.
+            if not calls and not native_tools and text:
+                parsed = _extract_text_tool_call(text)
+                if parsed:
+                    key, args = parsed
+                    accumulated.pop()
+                    calls = [{"id": new_id("call"), "name": fn_name(key), "arguments": json.dumps(args)}]
+
+            if not calls:
+                break
+
+            used_tools = True
+            if text:
+                messages.append(Message(role="assistant", content=text))
+
+            for call in calls:
+                result_text = await self._run_tool(run_ctx, call)
+                messages.append(Message(role="user", content=result_text))
+
+            run_ctx.add_event(
+                "step.end",
+                {"step": step, "tool_calls": [c["name"] for c in calls], "finish": finish_reason},
+            )
+            await api.update_run(
+                run_ctx.run_id,
+                step_count=run_ctx.budget.steps,
+                tool_calls=run_ctx.tool_calls,
+                state={"budget": run_ctx.budget.snapshot()},
+            )
+
+        final_text = "\n\n".join(p for p in accumulated if p).strip()
+        run_ctx.result = final_text or None
+        run_ctx.add_event("run.result", {"chars": len(final_text), "used_tools": used_tools})
+
+        if run_ctx.room_id:
+            # Kirim pesan final lebih dulu, baru tutup bubble streaming supaya
+            # tidak ada kedipan di UI.
+            await self._deliver(run_ctx, final_text, used_tools)
+            await publisher.message_completed(
+                run_ctx.room_id, job.agent_id, run_ctx.run_id, message_key
+            )
+
+    # ------------------------------------------------------------------
+    # internal
+    # ------------------------------------------------------------------
+
+    def _merge_tool_call(self, acc: dict[int, dict[str, Any]], fragment: dict[str, Any]) -> None:
+        index = int(fragment.get("index") or 0)
+        item = acc.setdefault(index, {"id": None, "name": None, "arguments": ""})
+        if fragment.get("id"):
+            item["id"] = fragment["id"]
+        if fragment.get("name"):
+            item["name"] = fragment["name"]
+        if fragment.get("arguments"):
+            item["arguments"] = (item["arguments"] or "") + str(fragment["arguments"])
+
+    def _normalize_tool_calls(self, acc: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+        calls: list[dict[str, Any]] = []
+        for index in sorted(acc):
+            item = acc[index]
+            if not item.get("name"):
+                continue
+            calls.append(
+                {
+                    "id": item.get("id") or new_id("call"),
+                    "name": str(item["name"]),
+                    "arguments": item.get("arguments") or "{}",
+                }
+            )
+        return calls
+
+    def _permission_effect(self, run_ctx: "RunContext", permission: str) -> str | None:
+        for p in run_ctx.context.get("permissions") or []:
+            if p.get("permission") == permission:
+                return str(p.get("effect"))
+        return None
+
+    async def _run_tool(self, run_ctx: "RunContext", call: dict[str, Any]) -> str:
+        key = tool_key_from_fn(str(call["name"]))
+        try:
+            args = json.loads(call.get("arguments") or "{}")
+            if not isinstance(args, dict):
+                args = {}
+        except json.JSONDecodeError:
+            args = {}
+
+        spec = next((t for t in run_ctx.context.get("tools") or [] if t["key"] == key), None)
+        permission = (spec or {}).get("permission") or key
+        effect = self._permission_effect(run_ctx, permission)
+
+        run_ctx.add_event("tool.call", {"tool_key": key, "args": args, "effect": effect})
+        await run_ctx.publisher.tool_call(
+            run_ctx.room_id, run_ctx.job.agent_id, run_ctx.run_id, key, args
+        )
+
+        if effect == "disabled":
+            message = f"Tool `{key}` dinonaktifkan untuk agent ini."
+            run_ctx.add_event("tool.denied", {"tool_key": key, "reason": "disabled"})
+            await run_ctx.publisher.tool_result(
+                run_ctx.room_id, run_ctx.job.agent_id, run_ctx.run_id, key, False, message
+            )
+            return message
+
+        if effect == "approval_required":
+            message = (
+                f"Tool `{key}` butuh approval manusia sebelum dijalankan. "
+                "Ajukan approval dan jelaskan rencanamu; jangan mengklaim sudah dijalankan."
+            )
+            run_ctx.add_event("tool.approval_required", {"tool_key": key, "args": args})
+            await run_ctx.publisher.tool_result(
+                run_ctx.room_id, run_ctx.job.agent_id, run_ctx.run_id, key, False, message
+            )
+            return message
+
+        try:
+            response = await run_ctx.api.execute_tool(
+                tool_key=key,
+                args=args,
+                company_id=run_ctx.job.company_id,
+                agent_id=run_ctx.job.agent_id,
+                room_id=run_ctx.room_id,
+                run_id=run_ctx.run_id,
+            )
+            ok = bool(response.get("ok", True))
+            result = response.get("result")
+            error = response.get("error")
+        except Exception as exc:  # noqa: BLE001 - tool gagal bukan akhir dunia
+            logger.warning("tool %s gagal: %s", key, exc)
+            ok, result, error = False, None, str(exc)
+
+        run_ctx.tool_calls.append(
+            {
+                "tool_key": key,
+                "ok": ok,
+                "args": args,
+                "result": result if ok else None,
+                "error": error,
+            }
+        )
+        run_ctx.add_event("tool.result", {"tool_key": key, "ok": ok, "error": error})
+        await run_ctx.publisher.tool_result(
+            run_ctx.room_id, run_ctx.job.agent_id, run_ctx.run_id, key, ok, result or error
+        )
+
+        return render_tool_result(key, ok, result, error)
+
+    async def _record_usage(
+        self, run_ctx: "RunContext", usage: dict[str, int], latency_ms: int
+    ) -> None:
+        run_ctx.budget.add_usage(usage.get("input_tokens", 0), usage.get("output_tokens", 0))
+
+        provider = run_ctx.context.get("provider") or {}
+        pricing = provider.get("pricing") or {}
+        cost = 0.0
+        if pricing.get("input_per_1k") is not None:
+            cost += usage.get("input_tokens", 0) / 1000 * float(pricing["input_per_1k"])
+        if pricing.get("output_per_1k") is not None:
+            cost += usage.get("output_tokens", 0) / 1000 * float(pricing["output_per_1k"])
+
+        try:
+            result = await run_ctx.api.record_usage(
+                company_id=run_ctx.job.company_id,
+                agent_id=run_ctx.job.agent_id,
+                run_id=run_ctx.run_id,
+                input_tokens=usage.get("input_tokens", 0),
+                output_tokens=usage.get("output_tokens", 0),
+                cached_tokens=usage.get("cached_tokens", 0),
+                estimated_cost=cost,
+                latency_ms=latency_ms,
+            )
+            if isinstance(result.get("cost_today"), (int, float)):
+                run_ctx.budget.sync_cost(float(result["cost_today"]))
+            run_ctx.budget.check_daily_limit()
+        except BudgetExceeded:
+            raise
+        except Exception:  # noqa: BLE001 - pencatatan usage tidak boleh mematikan run
+            logger.warning("gagal mencatat usage", exc_info=True)
+
+    async def _deliver(self, run_ctx: "RunContext", text: str, used_tools: bool) -> None:
+        if not run_ctx.room_id:
+            return
+
+        content = text
+        if not content and not used_tools:
+            content = "_(agent tidak menghasilkan jawaban teks)_"
+
+        if not content:
+            return
+
+        trigger = run_ctx.job.trigger or {}
+        meta: dict[str, Any] = {"model": (run_ctx.context.get("provider") or {}).get("model")}
+        if trigger.get("message_id"):
+            meta["reply_to"] = trigger["message_id"]
+
+        try:
+            await run_ctx.api.post_message(
+                run_ctx.run_id,
+                content,
+                kind="text",
+                meta=meta,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("gagal mengirim pesan agent ke room")

@@ -54,6 +54,9 @@ services:
       UPLOAD_DIR: /app/data/uploads
     ports:
       - "3000:3000"
+    # Agar bisa memanggil LLM lokal / mock provider di mesin host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - uploads:/app/data
     depends_on:
@@ -74,11 +77,18 @@ services:
       TZ: Asia/Jakarta
       DATABASE_URL: postgres://orvexa:orvexa@postgres:5432/orvexa
       REDIS_URL: redis://redis:6379
+      # Internal API Next.js (Fase 3) — worker memakai ini untuk persist run.
+      ORVEXA_WEB_URL: http://web:3000
+    # Agar bisa memanggil LLM lokal (Ollama/llama.cpp) di mesin host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      web:
+        condition: service_started
 
   # ============================================================
   # Reverse proxy + HTTPS otomatis (opsional)

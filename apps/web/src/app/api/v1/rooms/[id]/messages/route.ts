@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { apiError, apiOk, authenticate, guardPermission, readJson } from "@/lib/api";
 import { db } from "@/lib/db";
+import { triggerAgentsFromMessage } from "@/lib/agent-trigger";
 import { agents, messages, rooms, users } from "@/lib/db/schema";
 import { publishRoomEvent } from "@/lib/events";
 import { newId } from "@/lib/ids";
@@ -106,6 +107,7 @@ export async function POST(
       kind: data.kind,
       content: data.content,
       mentions: data.mentions ?? [],
+      replyToId: data.reply_to_id ?? null,
       meta: data.meta ?? {},
     })
     .returning();
@@ -125,8 +127,25 @@ export async function POST(
       meta: message.meta,
       created_at: message.createdAt,
       user_name: auth.user.displayName,
+      reply_to_id: message.replyToId,
     },
   });
+
+  // Bangunkan agent yang di-mention (Fase 3). Kegagalan enqueue tidak boleh
+  // menggagalkan pengiriman pesan — job hanya jalur async.
+  try {
+    await triggerAgentsFromMessage({
+      companyId: auth.company!.id,
+      roomId: id,
+      messageId: message.id,
+      text: data.content,
+      mentions: data.mentions ?? [],
+      authorUserId: auth.user.id,
+      replyToId: message.replyToId,
+    });
+  } catch {
+    // abaikan — worker akan tetap jalan untuk job berikutnya
+  }
 
   return apiOk({ message }, 201);
 }

@@ -200,18 +200,30 @@ Semua state persisten. Tidak ada business state yang hidup hanya di Redis. Kalau
 
 **Aturan:** event idempotent, punya `event_id` unik. Client boleh reconnect dan replay dari `Last-Event-ID` (SSE).
 
-### 5.3 Panggilan Sinkron (Next.js → Python, opsional)
+### 5.3 Panggilan Sinkron (Python → Next.js, implementasi Fase 3)
 
-Untuk operasi yang butuh hasil langsung (mis. "test credential", "preview embedding"), Python worker mengekspos **internal HTTP API** (FastAPI) di network internal saja, tidak diekspos ke publik.
+Arah internal API adalah **Python → Next.js** (`/api/internal/*`), bukan sebaliknya.
+Alasannya: web sudah memegang schema, validasi, RBAC, dan publikasi event —
+sehingga worker cukup jadi *executor* tanpa menduplikasi logika DB.
 
 ```text
-POST /internal/agent/run        (jalankan agent, streaming via callback)
-POST /internal/provider/test    (tes kredensial provider)
-POST /internal/knowledge/search (debug retrieval)
-GET  /internal/health
+GET   /api/internal/agents/:id/context   konteks run + kredensial provider (rahasia)
+PATCH /api/internal/agents/:id           status agent (thinking/working/idle)
+POST  /api/internal/runs                 buat run
+PATCH /api/internal/runs/:id             tutup run (status, token, biaya, hasil)
+POST  /api/internal/runs/:id/events      simpan agent_events (audit reasoning)
+POST  /api/internal/runs/:id/messages    agent kirim pesan ke room
+POST  /api/internal/usage                catat token & biaya + budget check
+POST  /api/internal/tools/execute        eksekusi tool builtin
 ```
 
-Dilindungi shared secret internal (`X-Internal-Token`), bukan JWT user.
+Dilindungi shared secret internal (`Authorization: Bearer INTERNAL_API_TOKEN`, constant-time),
+bukan JWT user. Fail-closed: bila token kosong → `503`.
+Rinciannya di [API_SPEC.md](./API_SPEC.md) §15.
+
+**Streaming token** tidak lewat HTTP: worker langsung `PUBLISH` ke Redis
+(`room.events.{room_id}`) supaya SSE gateway tinggal meneruskan.
+Lihat [API_SPEC.md](./API_SPEC.md) §15.2 untuk daftar event-nya.
 
 ---
 
@@ -309,51 +321,77 @@ Agent melanjutkan dari checkpoint (state tersimpan di agent_runs.state)
 
 ```text
 worker/
-├── main.py                 # Entry: consume Redis Streams
-├── orchestrator/           # Loop: observe → plan → act → reflect
-│   ├── loop.py
-│   ├── delegation.py       # Agent-to-agent handoff
-│   └── checkpoint.py       # Simpan/resume state (untuk approval & retry)
+├── main.py                 # Entry: consume Redis Streams (consumer group)
+├── config.py               # Settings dari env (web_url, timeout, budget default)
+├── orchestrator/           # Siklus hidup run + strategi (pluggable)
+│   ├── loop.py             # Orchestrator: context → run → close, error/timeout
+│   ├── strategy.py         # DefaultStrategy: LLM ↔ tool loop + streaming
+│   ├── delegation.py       # (Fase 4) agent-to-agent handoff
+│   └── checkpoint.py       # (Fase 5) simpan/resume untuk approval & retry
+├── runtime/                # Jembatan ke dunia luar
+│   ├── api.py              # Klien internal API Next.js
+│   ├── publisher.py        # Event room ke Redis Pub/Sub (bentuk = events.ts)
+│   ├── budget.py           # BudgetGuard: step/token/limit biaya harian
+│   └── prompt.py           # Susun system prompt + riwayat percakapan
 ├── providers/              # Abstraksi provider LLM
-│   ├── base.py             # Interface Provider
-│   ├── openai.py
-│   ├── anthropic.py
-│   ├── gemini.py
-│   ├── openai_compatible.py
-│   └── local.py
-├── tools/                  # Tool internal
-│   ├── registry.py
-│   ├── builtin/            # task.create, doc.generate, room.post
-│   └── mcp/                # MCP client
-├── rag/                    # Retrieval & embedding
-│   ├── ingest.py
-│   ├── chunker.py
-│   └── search.py
-├── guardrails/             # Approval gate, permission check, budget
-└── telemetry/              # usage tokens, cost, tracing
+│   ├── base.py             # Message, ToolSpec, ChatChunk, Provider (Protocol)
+│   ├── openai.py           # openai + openai_compatible + local (satu implementasi)
+│   ├── anthropic.py        # Messages API + tool_use
+│   ├── gemini.py           # generateContent + functionCall
+│   └── __init__.py         # get_provider(kind, ...) → factory
+├── tools/                  # Metadata tool (sumber kebenaran ada di web)
+│   └── registry.py
+├── rag/                    # (Fase 4) retrieval & embedding
+└── guardrails/             # (Fase 5) approval gate & permission lanjutan
 ```
+
+Catatan penting:
+
+- **Tool dieksekusi di web** (`apps/web/src/lib/tools.ts`). Worker hanya menerima
+  spesifikasi (JSON Schema) lewat konteks lalu memanggil `/api/internal/tools/execute`.
+  Satu pintu = satu tempat audit, permission, dan publikasi event.
+- **Nama tool di wire** hanya boleh `[a-zA-Z0-9_-]`, jadi `room.post` dikirim ke
+  provider sebagai `room__post` dan dipetakan balik saat eksekusi.
+- **Fallback tanpa function calling**: kalau provider/model tidak mendukung tools,
+  prompt meminta model membalas JSON `{"tool": ..., "args": {...}}` dan worker
+  mem-parse-nya.
+- **Error terisolasi**: kegagalan provider/tool tidak mematikan worker — run ditutup
+  dengan status `failed`/`cancelled`, `agent_events` tetap tersimpan, dan status agent
+  direset ke `idle`.
 
 ### 8.2 Agent Loop
 
 ```text
-Event masuk
+Event masuk (job dari agent.jobs)
   ↓
-Muat konteks (room history, memory, knowledge terfilter permission)
+Muat konteks  → GET /api/internal/agents/:id/context
+  (agent, prompt, skill, tool, permission, room, history, provider + kredensial)
   ↓
-Evaluate goal (apakah perlu delegasi / tool / jawab)
+Buat run  → POST /api/internal/runs   (status=running)
   ↓
-Cek permission & budget (guardrails)
+publish agent.run.started + status agent → thinking
   ↓
-[Butuh approval?] → ya → simpan checkpoint → ajukan approval → STOP
-  ↓ tidak
-Pilih tool / agent target → eksekusi
+┌ loop (sampai max_steps / budget habis) ─────────────────────┐
+│  Bukai bubble streaming  (agent.message.started)             │
+│  LLM call streaming  → agent.token / agent.reasoning         │
+│  Catat usage → POST /api/internal/usage (budget check)        │
+│  Ada tool call?                                              │
+│     ya  → cek permission → POST /api/internal/tools/execute  │
+│           → tool.call / tool.result → hasil jadi pesan user  │
+│     tidak → keluar loop                                      │
+└──────────────────────────────────────────────────────────────┘
   ↓
-Evaluasi hasil
+Kirim jawaban final → POST /api/internal/runs/:id/messages
+  (tetap lewat web agar event message.created konsisten)
   ↓
-Lanjut / Delegasi / Selesai
+Tutup bubble (agent.message.completed) + tutup run
+  (PATCH /runs/:id: status, step_count, tool_calls, state, result, duration_ms)
   ↓
-Persist run + events + memory
+Simpan agent_events (audit) + status agent → idle
 ```
+
+Status akhir run: `completed` · `failed` (error provider/tool) · `cancelled` (budget/timeout).
+Kegagalan selalu tetap menyimpan `agent_events` dan mengembalikan status agent ke `idle`.
 
 ### 8.3 Provider Abstraction
 
@@ -376,12 +414,34 @@ class Provider(Protocol):
 
 **Keuntungan:** ganti provider/fallback tanpa ubah kode agent. Fallback chain dikonfigurasi per agent (`ai_credentials.fallback_id`).
 
+Implementasi: `providers/__init__.py` → `get_provider(kind, api_key, base_url, model, timeout)`.
+Satu implementasi `OpenAIProvider` melayani `openai`, `openai_compatible`, dan `local`
+(karena semuanya memakai `POST {base_url}/chat/completions`).
+
+**Resolusi kredensial** (`apps/web/src/lib/credentials.ts`), urut prioritas:
+
+```text
+1. ai_credentials yang ditunjuk agent.credential_id (didekripsi AES-256-GCM)
+2. ai_credentials lain milik company dengan provider sama
+3. environment variable (OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY / ...)
+```
+
+Bila ketiganya kosong → `409 CONFLICT` dari internal API dan run tidak dijalankan
+(lebih baik gagal cepat daripada menggantung).
+
 ### 8.4 Budget & Guardrails
 
-- `max_steps` per run (cegah loop tak terbatas).
-- `max_tokens` / `max_cost` per run, per agent, per hari.
-- Timeout per tool call.
-- Tool call ke aksi sensitif **selalu** lewat approval gate.
+Implementasi: `worker/runtime/budget.py` (`BudgetGuard`) + `agent_permissions`.
+
+- `max_steps` per run (cegah loop tak terbatas) — dari job, jatuh ke `agents.max_steps`.
+- `max_tokens` per run — dari job, jatuh ke `agents.settings.max_tokens`.
+- **Biaya harian**: setiap pencatatan usage mengembalikan `cost_today`; guard
+  membandingkannya dengan `agents.daily_cost_limit` dan menghentikan run (`cancelled`).
+- **Timeout** total per run (`AGENT_TIMEOUT_SECONDS`, default 180 detik).
+- **Approval gate**: `agent_permissions.effect` = `disabled` → tool ditolak;
+  `approval_required` → tool **tidak** dieksekusi, model diberi tahu agar mengajukan
+  approval (implementasi alur approval penuh ada di Fase 5).
+- `agent_tools` yang tidak dicentang agent tidak akan muncul di daftar tool run.
 
 ---
 
@@ -528,6 +588,22 @@ Nginx  : proxy_buffering off;  proxy_cache off;  proxy_read_timeout 3600s;
 **MVP tidak memakai LangGraph.** Kebutuhan kita (kolaborasi multi-agent berbasis room + approval async) tidak sepenuhnya cocok dengan model graph per-run, dan state checkpoint sudah kita miliki (`agent_runs.state` + `agent_events`).
 
 Konsekuensi: orkestrator dibuat **swappable** di belakang interface, sehingga LangGraph (atau Pydantic AI / LlamaIndex Workflows / OpenAI Agents SDK) bisa ditambahkan nanti **tanpa rewrite**.
+
+Interface yang harus dipenuhi (`worker/orchestrator/strategy.py`):
+
+```python
+class Strategy(Protocol):
+    name: str
+    async def run(self, job: Job, runtime: Any, run_ctx: RunContext) -> None: ...
+
+# pemakaian
+orchestrator = Orchestrator(redis, api, strategy=LangGraphStrategy(...))
+```
+
+`runtime` memberi akses ke `api` (internal API) dan `publisher` (event room),
+sedangkan `run_ctx` membawa konteks agent, budget guard, dan buffer `agent_events`.
+Siklus hidup run (create/close/status/error) tetap dipegang `Orchestrator`, jadi
+strategi apa pun otomatis mendapat audit, timeout, dan budget guard yang sama.
 
 **Trigger untuk meninjau ulang:**
 

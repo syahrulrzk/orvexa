@@ -1,8 +1,10 @@
-"""Registry tool internal.
+"""Registry tool internal (metadata lokal).
 
-Tool logic sesungguhnya diimplementasikan pada Fase 3/4. Di sini kita
-mendefinisikan metadata + guardrail sehingga pemanggilan tool selalu
-melewati pemeriksaan permission dan approval.
+Sejak Fase 3, **sumber kebenaran** spesifikasi tool adalah web
+(`apps/web/src/lib/tools.ts`) dan dikirim ke worker lewat
+`GET /api/internal/agents/:id/context`. Registry ini tinggal dipakai sebagai
+cermin lokal untuk fallback/offline check sehingga permission dan approval
+selalu dapat diverifikasi di sisi worker juga.
 """
 
 from __future__ import annotations
@@ -35,6 +37,21 @@ def get_tool(key: str) -> ToolDefinition | None:
 
 def _bootstrap_builtin() -> None:
     """Tool builtin awal (Fase 3 akan mengisi handler sebenarnya)."""
+    register(ToolDefinition(
+        key="agent.delegate",
+        description="Delegasikan sub-tugas ke agent spesialis lain.",
+        permission="agent.delegate",
+    ))
+    register(ToolDefinition(
+        key="memory.save",
+        description="Simpan fakta/preferensi penting sebagai ingatan jangka panjang.",
+        permission="memory.write",
+    ))
+    register(ToolDefinition(
+        key="kb.search",
+        description="Cari informasi di Knowledge Base company (RAG).",
+        permission="knowledge.read",
+    ))
     register(ToolDefinition(
         key="task.create",
         description="Membuat task baru di project/room.",

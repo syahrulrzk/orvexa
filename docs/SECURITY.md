@@ -354,8 +354,15 @@ frame-ancestors 'none';
 ### 9.2 Internal API (Next.js ↔ Python)
 
 - Tidak diekspos ke publik (hanya network internal).
-- Dilindungi shared secret `X-Internal-Token` (constant-time compare) + mTLS opsional.
-- Hanya menerima job dari Redis Streams untuk operasi async (envelope terpercaya).
+- Dilindungi shared secret `INTERNAL_API_TOKEN` lewat header
+  `Authorization: Bearer ...`, dibandingkan **constant-time** (`timingSafeEqual`).
+- **Fail-closed**: bila token belum diset, semua route `/api/internal/*`
+  membalas `503` — bukan "terbuka tanpa auth".
+- Job async tetap masuk lewat Redis Streams (`agent.jobs`), bukan endpoint internal.
+- Kredensial provider hanya melewati jalur ini satu arah (web → worker) dan
+  tidak pernah dikirim ke browser.
+- Rotasi: ganti `INTERNAL_API_TOKEN` di web **dan** worker lalu restart keduanya.
+- mTLS opsional untuk deployment yang lebih ketat.
 
 ---
 

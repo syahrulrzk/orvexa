@@ -471,15 +471,75 @@ Aturan:
 
 ## 15. Internal API (Next.js ↔ Python worker)
 
-**Tidak diekspos ke publik.** Hanya di network internal + header `X-Internal-Token`.
+**Tidak diekspos ke publik.** Autentikasi `Authorization: Bearer <INTERNAL_API_TOKEN>`
+(perbandingan constant-time). Bila `INTERNAL_API_TOKEN` kosong, seluruh route
+internal membalas **503** (fitur dimatikan, bukan gagal terbuka).
+
+### 15.1 Pembagian tanggung jawab (Fase 3)
+
+```text
+Worker (Python)                      Web (Next.js)
+────────────────                    ──────────────
+consume agent.jobs (Redis Stream)   ── sumber konfigurasi & DB
+panggil provider LLM (streaming)    ── validasi, permission, audit
+publish event realtime → Redis      ── sumber event room + SSE gateway
+                                     ←─ eksekusi tool (satu pintu)
+```
+
+Worker **tidak** menulis PostgreSQL langsung. Semua persistensi lewat endpoint
+di bawah agar validasi, RBAC, dan publikasi event tetap konsisten.
 
 | Method | Path | Deskripsi |
 |---|---|---|
-| POST | `/internal/agent/run` | Jalankan agent (sync kickoff) |
-| POST | `/internal/provider/test` | Tes kredensial provider |
-| POST | `/internal/knowledge/index` | Mulai indexing dokumen |
-| POST | `/internal/knowledge/search` | Retrieval internal |
-| GET | `/internal/health` | Health worker |
+| GET | `/api/internal/agents/:id/context` | Konteks run: agent, provider (+secret), skill, tool, permission, room, history, budget |
+| PATCH | `/api/internal/agents/:id` | Ubah status agent (opsional publish event `agent.status`) |
+| POST | `/api/internal/runs` | Buat `agent_runs` (status `running`) |
+| PATCH | `/api/internal/runs/:id` | Tutup/update run: status, step, tool_calls, state, result, error, duration |
+| POST | `/api/internal/runs/:id/events` | Simpan batch `agent_events` (maks 200/batch) |
+| POST | `/api/internal/runs/:id/messages` | Agent kirim pesan ke room (+ update agregat thread, publish `message.created`) |
+| POST | `/api/internal/usage` | Catat `ai_usage`, balas akumulasi biaya harian & `budget_exceeded` |
+| POST | `/api/internal/tools/execute` | Eksekusi tool builtin (`room.post`, `task.create`, `doc.generate`) |
+
+Contoh respons konteks (dipotong):
+
+```json
+{
+  "data": {
+    "agent": { "id": "agt_...", "max_steps": 8, "system_prompt": "..." },
+    "provider": {
+      "kind": "openai_compatible",
+      "base_url": "http://localhost:11434/v1",
+      "api_key": "***",
+      "model": "gpt-4o-mini",
+      "source": "company_credential",
+      "pricing": { "input_per_1k": null, "output_per_1k": null }
+    },
+    "skills": [{ "name": "Prometheus", "prompt_hint": null }],
+    "tools": [{ "key": "room.post", "permission": "room.write", "requires_approval": false }],
+    "budget": { "max_steps": 8, "max_tokens": 12000 }
+  }
+}
+```
+
+> 🔒 `provider.api_key` **hanya** dikirim lewat internal API (tidak pernah ke browser).
+> Kode error yang mungkin: `409 CONFLICT` bila agent belum punya provider/kredensial.
+
+---
+
+### 15.2 Event streaming agent
+
+Event berikut dipublikasikan worker langsung ke Redis (`room.events.{room_id}`)
+selama run berlangsung. Bentuknya sama dengan §6.1, hanya `type`-nya bertambah:
+
+| Type | Payload | Keterangan |
+|---|---|---|
+| `agent.run.started` | `{}` | Run dimulai |
+| `agent.message.started` | `{ message_key, agent_name }` | Bubble streaming dibuka di UI |
+| `agent.token` | `{ message_key, delta }` | Potongan jawaban (di-flush per ~32 char / 50 ms) |
+| `agent.reasoning` | `{ message_key, delta }` | Potongan *thinking* (provider yang mendukung) |
+| `tool.call` / `tool.result` | `{ tool_key, args }` / `{ tool_key, ok, result }` | Jejak tool |
+| `agent.message.completed` | `{ message_key }` | Bubble ditutup; pesan final datang sebagai `message.created` |
+| `agent.run.finished` | `{ status, duration_ms, error? }` | Run selesai/gagal |
 
 ---
 

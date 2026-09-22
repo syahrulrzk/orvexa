@@ -6,7 +6,7 @@
 > Dokumen terkait: [PRD](./ORVEXA_Final_PRD_v1.0.md) · [docs/](./docs/README.md)
 
 **Terakhir diupdate:** 2026-09-22
-**Fase saat ini:** Fase 3 — AI Infrastructure Department
+**Fase saat ini:** Fase 5 — Governance
 
 ---
 
@@ -35,8 +35,8 @@
 | 0 | Perencanaan & Dokumentasi | 🟢 Selesai | 11/11 |
 | 1 | Fondasi | 🟢 Selesai | 13/13 |
 | 2 | Kolaborasi (Rooms & Realtime) | 🟢 Selesai | 7/7 |
-| 3 | AI Infrastructure Department | ⚪ Belum | 0/6 |
-| 4 | Agent Intelligence | ⚪ Belum | 0/7 |
+| 3 | AI Infrastructure Department | 🟢 Selesai | 9/9 |
+| 4 | Agent Intelligence | 🟢 Selesai | 7/7 |
 | 5 | Governance | ⚪ Belum | 0/7 |
 | 6 | Integrations & MCP | ⚪ Belum | 0/7 |
 
@@ -133,26 +133,97 @@ src/components/rooms/room-view.tsx   (realtime + reactions + thread + search + s
 
 ---
 
-## 5. Fase 3 — AI Infrastructure Department
+## 5. Fase 3 — AI Infrastructure Department 🟢
 
-- [ ] **F3-01** Python worker: consume Redis Streams (skeleton sudah ada)
-- [ ] **F3-02** Provider abstraction (OpenAI, Anthropic, Gemini, OpenAI-compatible, local)
-- [ ] **F3-03** Streaming token → Redis → SSE
-- [ ] **F3-04** Agent loop penuh + budget guard
-- [ ] **F3-05** Tools builtin handler: `task.create`, `room.post`, `doc.generate`
-- [ ] **F3-06** Wire 5 agent infra (prompt & skill assignment)
+- [x] **F3-01** Python worker: consume Redis Streams + consumer group + ACK + concurrency
+- [x] **F3-02** Provider abstraction: `openai`, `anthropic`, `gemini`, `openai_compatible`, `local`
+      (+ fallback tool-call via teks untuk model yang tidak mendukung function calling)
+- [x] **F3-03** Streaming token → Redis Pub/Sub → SSE (+ event `agent.message.started/completed`,
+      `tool.call/result`, `agent.run.started/finished`, batching ~32 char / 50 ms)
+- [x] **F3-04** Agent loop penuh + `BudgetGuard` (max step, max token, limit biaya harian, timeout)
+- [x] **F3-05** Tool builtin: `room.post`, `task.create`, `doc.generate` (eksekusi di web)
+- [x] **F3-06** Wire 5 agent infra: system prompt, skill (31 link), tool (15 link), provider + kredensial
+- [x] **F3-07** Bridge trigger: mention `@agent` / reply ke pesan agent → enqueue job otomatis
+- [x] **F3-08** Internal API `/api/internal/*` (context, runs, events, messages, usage, tools)
+- [x] **F3-09** `lib/crypto.ts` AES-256-GCM untuk kredensial provider + bootstrap dari env lewat seed
+
+**Alur satu run:**
+
+```text
+pesan room (mention agent)
+  → web: redis XADD agent.jobs
+  → worker: XREADGROUP → GET /internal/agents/:id/context
+  → POST /internal/runs → LLM streaming → agent.token (SSE)
+  → POST /internal/tools/execute (kalau ada tool call)
+  → POST /internal/runs/:id/messages → message.created (SSE)
+  → PATCH /internal/runs/:id + POST /internal/runs/:id/events
+```
+
+**File baru:**
+
+```text
+apps/web/src/lib/jobs.ts, agent-trigger.ts, agent-context.ts, credentials.ts, crypto.ts, tools.ts, internal.ts
+apps/web/src/app/api/internal/**            (8 route)
+apps/web/src/app/api/internal/agents/[id]/context/route.ts
+worker/runtime/{api,publisher,budget,prompt}.py
+worker/providers/{openai,anthropic,gemini}.py
+scripts/dev/mock-openai-server.py            (mock provider untuk E2E offline)
+```
+
+**Verifikasi e2e (mock provider, tanpa API key asli):**
+
+```text
+✓ worker start            → consumer group dibuat, connect Redis + internal API
+✓ mention @NOC            → job masuk agent.jobs (XLEN 1)
+✓ run dibuat              → agent_runs.status = completed, step_count = 2
+✓ streaming               → 8 event agent.token diterima klien
+✓ tool call               → tool.call doc.generate → tool.result ok → event document.created
+✓ jawaban agent          → pesan author_type=agent tersimpan + message.created (SSE)
+✓ usage tercatat          → ai_usage 4 baris (400 in / 104 out token)
+✓ agent_events           → step.start ×3, step.end, tool.call, tool.result, run.result
+✓ status agent           → thinking → idle (terlihat via SSE agent.status)
+✓ budget guard           → limit harian & max step/timeout aktif
+```
 
 ---
 
-## 6. Fase 4 — Agent Intelligence
+## 6. Fase 4 — Agent Intelligence 🟢
 
-- [ ] **F4-01** Agent-to-agent delegation (+ `parent_run_id`)
-- [ ] **F4-02** Tasks (CRUD, assign, dependency, board)
-- [ ] **F4-03** Agent memory 4 jenis
-- [ ] **F4-04** Knowledge Base: upload, extract, chunk, embed, index
-- [ ] **F4-05** RAG retrieval dengan filter permission (pre-filter)
-- [ ] **F4-06** Decisions + Documents generator (MOP/SOP/RCA)
-- [ ] **F4-07** Activity Center (feed realtime)
+- [x] **F4-01** Agent-to-agent delegation (+ `parent_run_id`): tool `agent.delegate`
+      (web enqueue job `delegation`), worker meneruskan `parent_run_id` ke `agent_runs`,
+      prompt menjelaskan sub-tugas + daftar agent yang bisa didelegasi.
+- [x] **F4-02** Tasks: CRUD + dependencies (deteksi siklus BFS) + board kanban 5 kolom;
+      assign ke agent memicu job `task.assigned` (worker otomatis jalan).
+- [x] **F4-03** Agent memory 4 scope (`conversation`/`project`/`company`/`agent`) di
+      `agent_memories`; recall otomatis di-inject ke konteks run; tool `memory.save`.
+- [x] **F4-04** Knowledge Base: upload dokumen teks (md/txt/csv/json ≤5 MB) → chunk
+      per-paragraf ber-overlap → embed (`text-embedding-3-small`, 1536 dim) → index
+      `knowledge_chunks`; halaman `/knowledge` dengan uploader.
+- [x] **F4-05** RAG retrieval **pre-filter permission di SQL** (agent_knowledge +
+      knowledge_acl + scope dokumen, fail-closed); tool `kb.search` untuk agent +
+      endpoint search untuk UI.
+- [x] **F4-06** Decisions (kode auto `DEC-XXXX`) + Documents (MOP/SOP/RCA/report) dengan
+      versioning otomatis; API + audit log + event room.
+- [x] **F4-07** Activity Center: `lib/activity.ts` (log + broadcast `activity.logged`),
+      API `/api/v1/activity`, halaman `/activity` dengan filter per kategori.
+
+**File baru Fase 4:**
+
+```text
+apps/web/src/lib/{memory,embeddings,knowledge,retrieval,activity}.ts
+apps/web/src/app/api/v1/tasks/**           (CRUD + dependencies)
+apps/web/src/app/api/v1/knowledge/**       (KB list/create, upload+index, search)
+apps/web/src/app/api/v1/decisions/route.ts
+apps/web/src/app/api/v1/documents/**
+apps/web/src/app/api/v1/activity/route.ts
+apps/web/src/components/tasks/task-board.tsx
+apps/web/src/components/knowledge/knowledge-uploader.tsx
+apps/web/src/components/activity/activity-feed.tsx
+halaman /tasks /knowledge /activity → ganti placeholder jadi UI nyata
+worker: loop.py (parent_run_id + trigger delegation), prompt.py (memori + delegasi),
+        tools/registry.py (+agent.delegate, +memory.save, +kb.search)
+tools.ts: +agent.delegate, +memory.save, +kb.search
+```
 
 ---
 
@@ -184,19 +255,35 @@ src/components/rooms/room-view.tsx   (realtime + reactions + thread + search + s
 
 ```text
 orvexa/
-├── apps/web/                     Next.js 16 (UI + BFF API)
-│   ├── src/app/                  layout, dashboard, login, api/health, api/auth
-│   ├── src/components/           app-shell, sidebar, topbar, theme-*
-│   ├── src/lib/                  env, time (WIB), password, auth, ids, db/
-│   ├── drizzle/0000_init.sql     migrasi awal (19 tabel)
+├── apps/web/                     Next.js 16 (UI + BFF API + internal API)
+│   ├── src/app/
+│   │   ├── (pages)               dashboard, login, rooms, agents, tasks, ...
+│   │   └── api/
+│   │       ├── auth/[...nextauth]/   Auth.js
+│   │       ├── health/               health check
+│   │       ├── internal/             API worker (8 route, bearer token)
+│   │       └── v1/                   REST publik (rooms, messages, ...)
+│   ├── src/components/           app-shell, sidebar, topbar, theme-*, rooms/, ui/
+│   ├── src/lib/                  env, time (WIB), auth, session, rbac, password, ids
+│   │   └── db/                   schema.ts (Drizzle) + client
+│   │   └── jobs.ts               producer Redis Streams → worker
+│   │   └── agent-context.ts      perakit konteks run agent
+│   │   └── credentials.ts        resolusi provider + kredensial
+│   │   └── crypto.ts             AES-256-GCM untuk kredensial
+│   │   └── tools.ts              definisi & eksekutor tool builtin
+│   ├── drizzle/                  0000–0003 migrasi SQL
 │   └── scripts/                  migrate.ts, seed.ts
 ├── worker/                       Python agent runtime
-│   ├── main.py                   consume Redis Streams
-│   ├── providers/                abstraksi provider (base + registry)
-│   ├── orchestrator/             agent loop skeleton
-│   └── tools/                    registry tool + guardrail
+│   ├── main.py                   consume Redis Streams (consumer group)
+│   ├── config.py                 settings dari env
+│   ├── orchestrator/loop.py      siklus hidup run
+│   ├── orchestrator/strategy.py  agent loop (pluggable via ADR-007)
+│   ├── runtime/                  api (internal), publisher (Redis), budget, prompt
+│   ├── providers/                openai, anthropic, gemini, factory
+│   └── tools/registry.py         cermin metadata tool
+├── scripts/dev/                  mock-openai-server.py (uji offline)
 ├── docs/                         arsitektur, db, security, design, API
-├── docker-compose.yml
+├── docker-compose.yml · Caddyfile
 ├── README.md · CONTRIBUTING.md · LICENSE · TASKLIST.md
 └── ORVEXA_Final_PRD_v1.0.md
 ```
@@ -235,6 +322,42 @@ orvexa/
 ## 11. Revision Log
 
 > Catat perubahan penting, keputusan yang direvisi, atau fitur baru. Terbaru di atas.
+
+### 2026-09-22 (sesi 10 — Fase 4 selesai)
+
+- **R-034** — **Fase 4 selesai (7/7)**: delegasi antar agent, tasks + board, memory 4 scope,
+  Knowledge Base + RAG, decisions + documents, Activity Center.
+- **R-035** — **Delegasi tetap satu arah web→worker**: tool `agent.delegate` yang dieksekusi
+  web memanggil `enqueueAgentJob` (bukan worker langsung XADD), konsisten dengan R-027.
+  Run anak otomatis mencatat `parent_run_id` sehingga rantai delegasi bisa diaudit.
+- **R-036** — **Embedding default mengikuti OQ-05**: `text-embedding-3-small` (1536 dim).
+  Resolver kredensial embedding memakai pola yang sama dengan provider chat
+  (agent → company → env). File: `lib/embeddings.ts`.
+- **R-037** — **RAG fail-closed**: pre-filter permission dievaluasi **di dalam SQL**
+  (agent_knowledge + knowledge_acl + scope), bukan difilter di aplikasi setelah query —
+  chunk yang tidak berhak tidak pernah keluar dari database. Tanpa grant khusus,
+  agent hanya melihat dokumen scope `company`.
+- **R-038** — **KB MVP hanya dokumen teks** (md/txt/csv/json ≤5 MB). PDF/DOCX butuh parser
+  biner; ekstraksi akan dipindah ke worker Python (Fase 6) sesuai arah arsitektur.
+- **R-039** — **Dokumen final ber-versioning**: edit konten dokumen berstatus `final`
+  otomatis menaikkan versi dan mengembalikan status ke `draft` (jejak revisi).
+- **R-040** — **Activity Center satu pintu**: `logActivity()` mencatat ke `activity_logs`
+  sekaligus broadcast SSE `activity.logged`; API CRUD task/decision/document memakai helper
+  ini sehingga audit trail dan feed realtime tidak berbeda sumber.
+
+### 2026-09-22 (sesi 9 — Fase 3 selesai)
+
+- **R-026** — **Fase 3 selesai (6/6 + 3 tambahan)**: worker Python benar-benar menjalankan agent. Provider konkret (OpenAI/Anthropic/Gemini/OpenAI-compatible/lokal), streaming token ke Redis → SSE, agent loop penuh dengan `BudgetGuard`, dan tool builtin (`room.post`, `task.create`, `doc.generate`).
+- **R-027** — **Keputusan arsitektur: tool dieksekusi di web**, bukan di Python. Worker menerima JSON Schema tool lewat konteks lalu memanggil `/api/internal/tools/execute`. Alasan: validasi, RBAC, dan publikasi event tetap satu pintu; tidak ada duplikasi logika DB di dua bahasa. Worker juga **tidak** menulis PostgreSQL langsung.
+- **R-028** — **Internal API dibalik arahnya menjadi Python → Next.js** (`/api/internal/*`, `Authorization: Bearer INTERNAL_API_TOKEN`, constant-time, fail-closed 503). Detail di [API_SPEC](./docs/API_SPEC.md) §15 & [SECURITY](./docs/SECURITY.md) §9.2.
+- **R-029** — **Kredensial provider**: `lib/crypto.ts` (AES-256-GCM, key version, masking `last4`). Resolusi berjenjang: kredensial agent → kredensial company → env. Seed mem-bootstrap `ai_providers`/`ai_credentials`/`ai_models` dari env dan menautkannya ke 5 agent infra.
+- **R-030** — **Perbaikan bug yang ditemukan saat verifikasi**:
+  - `apps/web/next.config.mjs` kini memuat `.env` **root monorepo** — sebelumnya `npm run dev -w apps/web` hanya membaca `apps/web/.env` sehingga `INTERNAL_API_TOKEN`/`DATABASE_URL` diabaikan secara senyap.
+  - `apps/web/Dockerfile` gagal build karena `COPY apps/web/node_modules` (npm workspaces menaruh dependency di root). Image web kini terverifikasi terbangun.
+  - `next.config.mjs` ikut disalin ke image runtime.
+- **R-031** — Kontrak konteks worker memakai **snake_case** (`base_url`, `api_key`) konsisten dengan API_SPEC; sebelumnya campur camelCase dan membuat provider selalu dianggap tanpa kredensial.
+- **R-032** — Ditambahkan `scripts/dev/mock-openai-server.py`: mock provider OpenAI-compatible untuk menguji seluruh rantai (streaming, tool call, usage) **tanpa API key** — dipakai untuk verifikasi e2e Fase 3.
+- **R-033** — Login: hash seed lama (scrypt) di-upgrade transparan ke **Argon2id** saat login pertama berhasil.
 
 ### 2026-09-22 (sesi 7 — Fase 2 selesai)
 
@@ -290,9 +413,10 @@ orvexa/
 | ~~OQ-05~~ | Embedding model default | ✅ **OpenAI text-embedding-3-small (1536)** — sesuai dim di schema |
 | ~~OQ-06~~ | Auth session | ✅ **JWT (MVP)** → roadmap DB session |
 | OQ-03 | Object storage default | 🟡 Usul: **volume lokal** (MinIO/S3 opsional) |
-| OQ-04 | Provider default untuk seed agent | 🟡 Belum ditentukan (butuh kredensial saat Fase 3) |
+| ~~OQ-04~~ | Provider default untuk seed agent | ✅ **Dari env** (`OPENAI_COMPATIBLE_API_KEY` dst.) → dienkripsi ke `ai_credentials` saat seed; agent lain bisa diatur dari UI Providers |
 | ~~OQ-07~~ | UI primitives | ✅ **shadcn/ui** (di-mapping ke token Orvexa) |
-| OQ-08 | Orkestrasi worker: Redis Streams consumer group vs arq/Celery | 🟡 Usul: **Redis Streams** (sudah dipakai) |
+| ~~OQ-08~~ | Orkestrasi worker: Redis Streams consumer group vs arq/Celery | ✅ **Redis Streams** (dipakai sejak F1, sudah terbukti di F3) |
+| OQ-09 | Retry berjenjang + dead-letter untuk job gagal | 🟡 Usul: `XPENDING` + retry counter + stream `agent.jobs.dead` (Fase 5) |
 
 ---
 
@@ -308,8 +432,26 @@ Urutan yang disarankan:
    npm run dev            # http://localhost:3000  (login: lead@orvexa.dev / orvexa12345)
    npm run dev:worker     # butuh: cd worker && python -m venv .venv && pip install -r requirements.txt
    ```
-2. Mulai **Fase 3**: worker menjalankan agent dan mengirim balasan ke room (provider abstraction + streaming token + `agent_runs`).
-3. Sertakan kredensial provider di `ai_credentials` (terenkripsi) sebelum agent bisa benar-benar membalas.
+2. Mulai **Fase 4 — Agent Intelligence**: delegasi antar agent (`parent_run_id`), Tasks (CRUD + board), agent memory, Knowledge Base + RAG, generator dokumen, Activity Center.
+3. **Agar agent bisa membalas**, isi salah satu API key provider di `.env` lalu jalankan seed:
+   ```bash
+   # .env
+   OPENAI_API_KEY=sk-...            # atau ANTHROPIC_API_KEY / GEMINI_API_KEY
+   # provider lokal (Ollama):
+   # LOCAL_LLM_API_KEY=ollama
+   # LOCAL_LLM_BASE_URL=http://host.docker.internal:11434/v1
+   npm run db:seed -w apps/web      # bootstrap ai_providers + ai_credentials (terenkripsi)
+   ```
+   Alternatif: simpan kredensial lewat menu **Providers** (belum ada UI-nya).
+4. **Uji tanpa API key** (mock provider):
+   ```bash
+   python3 scripts/dev/mock-openai-server.py --port 8089
+   docker run -d --name orvexa-mock-llm --network orvexa_default \
+     -v "$PWD/scripts/dev:/app:ro" python:3.12-slim \
+     python /app/mock-openai-server.py --port 8089
+   # set base_url provider ke http://orvexa-mock-llm:8089/v1, lalu kirim pesan yang
+   # menyebut kata TOOLTEST untuk menguji jalur tool call.
+   ```
 
 **Deployment (domain + HTTPS):**
 
@@ -323,7 +465,16 @@ docker compose --profile proxy up -d --build
 ```
 
 Panduan lengkap: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) §10.5.
-4. Putuskan **OQ-03 / OQ-04 / OQ-07** sebelum menyentuh storage, provider, dan UI kit.
+
+**Catatan worker:** `docker compose up -d --build` sudah menjalankan worker sebagai
+service. Untuk menjalankan satu kali saja (debug/memproses antrean lalu berhenti):
+
+```bash
+docker compose run --rm --no-deps -T worker
+```
+
+Sisa keputusan terbuka yang relevan: **OQ-03** (object storage) dan **OQ-09**
+(retry + dead-letter) — keduanya menyentuh Fase 5/6.
 
 **Catatan penting:** `.env` sudah dibuat dengan secret ter-generate (gitignored). Jangan commit.
 
