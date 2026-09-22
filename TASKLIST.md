@@ -1,0 +1,279 @@
+# ORVEXA — Tasklist & Progress Tracker
+
+> **Living document.** Update file ini setiap kali task selesai atau ada ide fitur baru.
+> Tujuan: siapapun (termasuk agent) bisa lanjut kerja tanpa kehilangan konteks.
+>
+> Dokumen terkait: [PRD](./ORVEXA_Final_PRD_v1.0.md) · [docs/](./docs/README.md)
+
+**Terakhir diupdate:** 2026-09-22
+**Fase saat ini:** Fase 1 — Fondasi (hampir selesai; sisa follow-up)
+
+---
+
+## Cara Pakai
+
+- Tandai dengan `[x]` kalau selesai, `[ ]` kalau belum, `[~]` kalau sedang dikerjakan.
+- Setiap task punya **ID** supaya bisa dirujuk di chat/commit (mis. `F1-03`).
+- Kalau ada fitur baru / revisi, catat di **§10 Backlog** dan **§11 Revision Log**, jangan langsung ubah PRD.
+- Kalau selesai satu fase, update baris **Fase saat ini** di atas.
+
+### Legend
+
+```text
+[x]  Selesai
+[~]  Sedang dikerjakan
+[ ]  Belum mulai
+[!]  Diblokir / butuh keputusan
+```
+
+---
+
+## 1. Ringkasan Progres
+
+| Fase | Nama | Status | Progres |
+|---|---|---|---|
+| 0 | Perencanaan & Dokumentasi | 🟢 Selesai | 11/11 |
+| 1 | Fondasi | 🟡 Berjalan | 8/8 core · 3 follow-up |
+| 2 | Kolaborasi (Rooms & Realtime) | ⚪ Belum | 0/7 |
+| 3 | AI Infrastructure Department | ⚪ Belum | 0/6 |
+| 4 | Agent Intelligence | ⚪ Belum | 0/7 |
+| 5 | Governance | ⚪ Belum | 0/7 |
+| 6 | Integrations & MCP | ⚪ Belum | 0/7 |
+
+**Legenda status fase:** 🟢 Selesai · 🟡 Berjalan · ⚪ Belum mulai · 🔴 Blocked
+
+---
+
+## 2. Fase 0 — Perencanaan & Dokumentasi ✅
+
+- [x] **F0-01** Baca & pahami PRD v1.0
+- [x] **F0-02** Putuskan stack: Hybrid Next.js + Python worker
+- [x] **F0-03** `docs/ARCHITECTURE.md`
+- [x] **F0-04** `docs/DATABASE_SCHEMA.md`
+- [x] **F0-05** `docs/SECURITY.md`
+- [x] **F0-06** `docs/DESIGN.md` + indeks `docs/README.md`
+- [x] **F0-07** `docs/API_SPEC.md`
+- [x] **F0-08** `CONTRIBUTING.md` + root `README.md`
+- [x] **F0-09** Lisensi OSS: **MIT** (`LICENSE`)
+- [x] **F0-10** Keputusan migration tool: **Drizzle ORM + Drizzle Kit**
+- [x] **F0-11** Konvensi timezone **Asia/Jakarta (WIB)** di seluruh stack & DB
+
+---
+
+## 3. Fase 1 — Fondasi 🟡
+
+### Selesai
+
+- [x] **F1-01** Scaffold monorepo (`apps/web`, `worker/`) + npm workspaces
+- [x] **F1-02** Setup **Next.js 16** + React 19 + TypeScript + **Tailwind v4**
+- [x] **F1-03** `docker-compose.yml` (web, worker, postgres+pgvector, redis) + Dockerfiles
+- [x] **F1-04** `.env.example` + generator secret
+- [x] **F1-05** Migrasi awal (`drizzle/0000_init.sql`) + runner migrasi
+- [x] **F1-06** Seed: 5 tema, 26 skill, company demo, user demo, 5 agent infra
+- [x] **F1-07** Auth.js (next-auth v5) credentials login + proteksi login
+- [x] **F1-08** AppShell 3 kolom + sidebar navigasi + **theme switcher (5 tema)**
+
+### Follow-up (belum)
+
+- [ ] **F1-02b** Adopsi shadcn/ui (komponen primitif) atau komponen internal sendiri
+- [ ] **F1-05b** Migrasi tabel sisanya (projects, tasks, approvals, decisions, documents,
+      knowledge, runs, memories, mcp, usage) — masih di `docs/DATABASE_SCHEMA.md`
+- [ ] **F1-07b** Upgrade auth: database session + OAuth (Google/GitHub) + RBAC helper + Argon2id
+- [ ] **F1-09** ESLint (flat config) + Prettier + CI (GitHub Actions)
+- [ ] **F1-10** Halaman placeholder untuk route navigasi (`/rooms`, `/agents`, dst)
+
+**Verifikasi yang sudah dilakukan:**
+
+```text
+✓ npm run typecheck -w apps/web        → lolos
+✓ npm run build -w apps/web            → Next.js 16.3.5 build sukses
+✓ python -m py_compile (worker)        → lolos
+✓ docker compose build worker          → image terbangun
+✓ npm run db:migrate                   → 0000_init.sql applied (19 tabel)
+✓ npm run db:seed                      → 5 tema, 26 skill, 5 agent
+✓ SHOW timezone                        → Asia/Jakarta (now = +07)
+✓ worker start                         → connect Redis, consumer group dibuat
+```
+
+---
+
+## 4. Fase 2 — Kolaborasi (Rooms & Realtime)
+
+- [ ] **F2-01** CRUD Rooms (+ tipe: general/department/incident/project/war_room)
+- [ ] **F2-02** Room members (human + agent)
+- [ ] **F2-03** Message persistence + message types
+- [ ] **F2-04** SSE Gateway (Redis Pub/Sub → browser), reconnect `Last-Event-ID`
+- [ ] **F2-05** Composer: mention agent, slash command, attachment
+- [ ] **F2-06** Threads + reactions + search pesan
+- [ ] **F2-07** Agent status pill realtime + typing indicator
+
+---
+
+## 5. Fase 3 — AI Infrastructure Department
+
+- [ ] **F3-01** Python worker: consume Redis Streams (skeleton sudah ada)
+- [ ] **F3-02** Provider abstraction (OpenAI, Anthropic, Gemini, OpenAI-compatible, local)
+- [ ] **F3-03** Streaming token → Redis → SSE
+- [ ] **F3-04** Agent loop penuh + budget guard
+- [ ] **F3-05** Tools builtin handler: `task.create`, `room.post`, `doc.generate`
+- [ ] **F3-06** Wire 5 agent infra (prompt & skill assignment)
+
+---
+
+## 6. Fase 4 — Agent Intelligence
+
+- [ ] **F4-01** Agent-to-agent delegation (+ `parent_run_id`)
+- [ ] **F4-02** Tasks (CRUD, assign, dependency, board)
+- [ ] **F4-03** Agent memory 4 jenis
+- [ ] **F4-04** Knowledge Base: upload, extract, chunk, embed, index
+- [ ] **F4-05** RAG retrieval dengan filter permission (pre-filter)
+- [ ] **F4-06** Decisions + Documents generator (MOP/SOP/RCA)
+- [ ] **F4-07** Activity Center (feed realtime)
+
+---
+
+## 7. Fase 5 — Governance
+
+- [ ] **F5-01** Permission matrix (RBAC + ABAC) di BFF + runtime
+- [ ] **F5-02** RLS PostgreSQL aktif di semua tabel ber-`company_id`
+- [ ] **F5-03** Approval workflow (request → decide → resume checkpoint)
+- [ ] **F5-04** Enkripsi kredensial AES-256-GCM + rotasi + masking UI
+- [ ] **F5-05** Audit log append-only + redaksi secret
+- [ ] **F5-06** AI cost tracking
+- [ ] **F5-07** Rate limiting, CSP & security headers, webhook signature
+
+---
+
+## 8. Fase 6 — Integrations & MCP
+
+- [ ] **F6-01** MCP client di worker
+- [ ] **F6-02** MCP server: Prometheus / Grafana
+- [ ] **F6-03** MCP server: Wazuh, Docker, Kubernetes
+- [ ] **F6-04** MCP server: UniFi, MikroTik, Firewall
+- [ ] **F6-05** Integrasi n8n
+- [ ] **F6-06** Tool sensitif wajib approval
+- [ ] **F6-07** Notifikasi keluar (email/Slack/Telegram)
+
+---
+
+## 9. Struktur Repo Saat Ini
+
+```text
+orvexa/
+├── apps/web/                     Next.js 16 (UI + BFF API)
+│   ├── src/app/                  layout, dashboard, login, api/health, api/auth
+│   ├── src/components/           app-shell, sidebar, topbar, theme-*
+│   ├── src/lib/                  env, time (WIB), password, auth, ids, db/
+│   ├── drizzle/0000_init.sql     migrasi awal (19 tabel)
+│   └── scripts/                  migrate.ts, seed.ts
+├── worker/                       Python agent runtime
+│   ├── main.py                   consume Redis Streams
+│   ├── providers/                abstraksi provider (base + registry)
+│   ├── orchestrator/             agent loop skeleton
+│   └── tools/                    registry tool + guardrail
+├── docs/                         arsitektur, db, security, design, API
+├── docker-compose.yml
+├── README.md · CONTRIBUTING.md · LICENSE · TASKLIST.md
+└── ORVEXA_Final_PRD_v1.0.md
+```
+
+---
+
+## 10. Backlog Fitur Baru (Belum masuk PRD)
+
+> Catat ide di sini dulu. Setelah disetujui, pindahkan ke fase yang sesuai + update PRD.
+
+| ID | Fitur | Nilai | Prioritas | Status |
+|---|---|---|---|---|
+| NB-01 | MFA / TOTP untuk owner & admin | Keamanan | Tinggi | Ide |
+| NB-02 | SSO (SAML / OIDC) | Enterprise | Sedang | Ide |
+| NB-03 | Custom Brand Theme (logo, warna company) | PRD §29 future | Sedang | Ide |
+| NB-04 | Agent marketplace / template agent shareable | OSS community | Sedang | Ide |
+| NB-05 | Marketplace MCP server | Ekstensibilitas | Sedang | Ide |
+| NB-06 | Voice input di room | UX | Rendah | Ide |
+| NB-07 | Mobile app / PWA | Aksesibilitas | Sedang | Ide |
+| NB-08 | Export audit log & laporan biaya (CSV/PDF) | Compliance | Sedang | Ide |
+| NB-09 | Multi-bahasa UI (i18n, EN + ID) | OSS reach | Sedang | Ide |
+| NB-10 | Agent evaluation / benchmark harness | Kualitas | Sedang | Ide |
+| NB-11 | Run replay & "time travel" debugging | Observability | Rendah | Ide |
+| NB-12 | Budget & quota per team/project | Cost control | Tinggi | Ide |
+| NB-13 | Approval delegation (proxy approver) | Ops | Rendah | Ide |
+| NB-14 | Scheduled agent (cron / recurring task) | Otomasi | Sedang | Ide |
+| NB-15 | Departemen baru (Sales, HR, Finance, dll) | Ekspansi produk | Rendah | Ide |
+| NB-16 | Grafik & dashboard metrik agent | Insight | Sedang | Ide |
+| NB-17 | Plugin system untuk tool kustom (non-MCP) | Ekstensibilitas | Rendah | Ide |
+| NB-18 | Impersonation / view-as (admin debug) | Support | Rendah | Ide |
+| NB-19 | Timezone per-user override (default tetap WIB) | UX global | Rendah | Ide |
+
+---
+
+## 11. Revision Log
+
+> Catat perubahan penting, keputusan yang direvisi, atau fitur baru. Terbaru di atas.
+
+### 2026-09-22 (sesi 2 — scaffold)
+
+- **R-012** — Scaffold **Fase 1**: monorepo, Next.js 16, worker Python, Docker, migrasi awal (19 tabel), seed, auth credentials, AppShell + 5 tema. Semua diverifikasi (typecheck, build, migrate, seed, timezone, worker).
+- **R-011** — **Upgrade ke Next.js 16.3.5** (dari 15) + React 19.3 + **Tailwind v4** (konfigurasi CSS-first). Diminta oleh maintainer.
+- **R-010** — Lisensi diputuskan **MIT** (maksimal adopsi). Alternatif AGPL-3.0 dipertimbangkan bila kelak perlu melindungi dari hosting tertutup.
+- **R-009** — Keputusan **Drizzle ORM** sebagai satu-satunya sumber schema & migrasi.
+- **R-008** — **Timezone Asia/Jakarta (WIB)** diterapkan end-to-end: DB (`ALTER DATABASE ... SET timezone`), env `TZ`, format tampilan `Intl`. Terverifikasi `SHOW timezone = Asia/Jakarta`.
+- **R-007** — Menambah `docs/API_SPEC.md`, `CONTRIBUTING.md`, root `README.md`.
+
+### 2026-09-22 (sesi 1 — dokumentasi)
+
+- **R-006** — Finalisasi stack: Hybrid Next.js + Python worker.
+- **R-005** — Konvensi ID ber-prefix (ULID-like) + `timestamptz` untuk semua kolom waktu.
+- **R-004** — Menambahkan dokumen arsitektur, database, keamanan, dan desain.
+- **R-003** — Keputusan schema ownership: Drizzle di `apps/web` (worker read/write saja).
+- **R-002** — Database self-host only (PostgreSQL + pgvector).
+- **R-001** — Bahasa dokumentasi: **Indonesia**.
+- **Base** — PRD v1.0 dijadikan acuan final.
+
+---
+
+## 12. Keputusan Terbuka (Butuh Diambil)
+
+| ID | Pertanyaan | Status |
+|---|---|---|
+| ~~OQ-01~~ | Schema ownership & migration tool | ✅ **Drizzle** |
+| ~~OQ-02~~ | Lisensi OSS | ✅ **MIT** |
+| ~~OQ-05~~ | Embedding model default | ✅ **OpenAI text-embedding-3-small (1536)** — sesuai dim di schema |
+| ~~OQ-06~~ | Auth session | ✅ **JWT (MVP)** → roadmap DB session |
+| OQ-03 | Object storage default | 🟡 Usul: **volume lokal** (MinIO/S3 opsional) |
+| OQ-04 | Provider default untuk seed agent | 🟡 Belum ditentukan (butuh kredensial saat Fase 3) |
+| OQ-07 | UI primitives: shadcn/ui vs komponen internal | 🟡 Belum (lihat F1-02b) |
+| OQ-08 | Orkestrasi worker: Redis Streams consumer group vs arq/Celery | 🟡 Usul: **Redis Streams** (sudah dipakai) |
+
+---
+
+## 13. Catatan untuk Sesi Berikutnya (Handoff)
+
+Urutan yang disarankan:
+
+1. **Quickstart dev:**
+   ```bash
+   docker compose up -d postgres redis
+   npm install
+   npm run db:migrate && npm run db:seed
+   npm run dev            # http://localhost:3000  (login: lead@orvexa.dev / orvexa12345)
+   npm run dev:worker     # butuh: cd worker && python -m venv .venv && pip install -r requirements.txt
+   ```
+2. Selesaikan follow-up Fase 1: **F1-05b** (tabel sisanya) lalu **F1-07b** (DB session + RBAC).
+3. Mulai **Fase 2**: Rooms + SSE (butuh F2-01 s/d F2-04 berurutan).
+4. Putuskan **OQ-03 / OQ-04 / OQ-07** sebelum menyentuh storage, provider, dan UI kit.
+
+**Catatan penting:** `.env` sudah dibuat dengan secret ter-generate (gitignored). Jangan commit.
+
+**File kunci untuk konteks cepat:**
+
+```text
+ORVEXA_Final_PRD_v1.0.md      → produk & scope
+TASKLIST.md                   → file ini (progres & backlog)
+docs/ARCHITECTURE.md          → cara sistem dibangun
+docs/DATABASE_SCHEMA.md       → model data (DDL lengkap)
+docs/SECURITY.md              → aturan keamanan wajib
+docs/DESIGN.md                → design system & komponen
+docs/API_SPEC.md              → kontrak REST & event
+CONTRIBUTING.md               → cara setup & kontribusi
+```

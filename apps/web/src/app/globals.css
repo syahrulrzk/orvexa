@@ -1,0 +1,176 @@
+@import "tailwindcss";
+
+/* ============================================================
+   ORVEXA — Design Tokens (Tailwind v4, lihat docs/DESIGN.md)
+   Tema di-set via data-theme="..." di <html>
+   ============================================================ */
+
+/* Pemetaan token semantic → utility Tailwind (bg-canvas, text-fg, dst) */
+@theme inline {
+  --color-canvas: var(--orv-bg);
+  --color-canvas-subtle: var(--orv-bg-subtle);
+  --color-surface: var(--orv-surface);
+  --color-surface-raised: var(--orv-surface-raised);
+  --color-line: var(--orv-border);
+  --color-line-strong: var(--orv-border-strong);
+  --color-fg: var(--orv-text);
+  --color-fg-muted: var(--orv-text-muted);
+  --color-fg-faint: var(--orv-text-faint);
+  --color-brand: var(--orv-primary);
+  --color-brand-hover: var(--orv-primary-hover);
+  --color-brand-fg: var(--orv-primary-fg);
+  --color-success: var(--orv-success);
+  --color-warning: var(--orv-warning);
+  --color-danger: var(--orv-danger);
+  --color-info: var(--orv-info);
+  --color-neutral: var(--orv-neutral);
+  --color-focus: var(--orv-focus-ring);
+
+  --font-ui: var(--orv-font-ui);
+  --font-mono: var(--orv-font-mono);
+
+  --spacing-sidebar: 240px;
+  --spacing-sidebar-collapsed: 64px;
+  --spacing-topbar: 56px;
+  --spacing-context: 320px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  --shadow-sm: 0 1px 2px rgba(16, 20, 24, 0.06);
+  --shadow-md: 0 2px 8px rgba(16, 20, 24, 0.08);
+  --shadow-lg: 0 8px 24px rgba(16, 20, 24, 0.12);
+
+  --text-display: 28px;
+  --text-display--line-height: 1.2;
+  --text-display--font-weight: 600;
+
+  --text-overline: 11px;
+  --text-overline--line-height: 1.4;
+  --text-overline--letter-spacing: 0.04em;
+  --text-overline--font-weight: 600;
+}
+
+/* --- Tema: Corporate Gray (default) --- */
+:root,
+[data-theme="corporate_gray"] {
+  --orv-bg: #f8f9fa;
+  --orv-bg-subtle: #f1f3f5;
+  --orv-surface: #ffffff;
+  --orv-surface-raised: #ffffff;
+  --orv-border: #dee2e6;
+  --orv-border-strong: #ced4da;
+  --orv-text: #212529;
+  --orv-text-muted: #495057;
+  --orv-text-faint: #868e96;
+  --orv-primary: #343a40;
+  --orv-primary-hover: #212529;
+  --orv-primary-fg: #ffffff;
+  --orv-success: #2f9e44;
+  --orv-warning: #f08c00;
+  --orv-danger: #c92a2a;
+  --orv-info: #1c7ed6;
+  --orv-neutral: #868e96;
+  --orv-focus-ring: #1c7ed6;
+  --orv-font-ui: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --orv-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+[data-theme="light"] {
+  --orv-bg: #ffffff;
+  --orv-bg-subtle: #f8f9fa;
+  --orv-surface: #ffffff;
+  --orv-surface-raised: #ffffff;
+  --orv-border: #e9ecef;
+  --orv-border-strong: #ced4da;
+  --orv-text: #14171a;
+  --orv-text-muted: #495057;
+  --orv-text-faint: #868e96;
+  --orv-primary: #1c7ed6;
+  --orv-primary-hover: #1971c2;
+  --orv-primary-fg: #ffffff;
+}
+
+[data-theme="dark"] {
+  --orv-bg: #17191c;
+  --orv-bg-subtle: #202428;
+  --orv-surface: #202428;
+  --orv-surface-raised: #2b2f33;
+  --orv-border: #2b2f33;
+  --orv-border-strong: #3a4047;
+  --orv-text: #f1f3f5;
+  --orv-text-muted: #adb5bd;
+  --orv-text-faint: #868e96;
+  --orv-primary: #e9ecef;
+  --orv-primary-hover: #ffffff;
+  --orv-primary-fg: #17191c;
+  --orv-focus-ring: #4dabf7;
+}
+
+[data-theme="midnight"] {
+  --orv-bg: #0b1020;
+  --orv-bg-subtle: #111731;
+  --orv-surface: #111731;
+  --orv-surface-raised: #182046;
+  --orv-border: #1d2650;
+  --orv-border-strong: #2a3568;
+  --orv-text: #e7ecff;
+  --orv-text-muted: #9aa6d4;
+  --orv-text-faint: #6b769f;
+  --orv-primary: #4dabf7;
+  --orv-primary-hover: #74c0fc;
+  --orv-primary-fg: #0b1020;
+  --orv-focus-ring: #4dabf7;
+}
+
+[data-theme="high_contrast"] {
+  --orv-bg: #ffffff;
+  --orv-bg-subtle: #ffffff;
+  --orv-surface: #ffffff;
+  --orv-surface-raised: #ffffff;
+  --orv-border: #000000;
+  --orv-border-strong: #000000;
+  --orv-text: #000000;
+  --orv-text-muted: #1a1a1a;
+  --orv-text-faint: #333333;
+  --orv-primary: #000000;
+  --orv-primary-hover: #1a1a1a;
+  --orv-primary-fg: #ffffff;
+  --orv-focus-ring: #0000ee;
+}
+
+@layer base {
+  * {
+    border-color: var(--orv-border);
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--orv-bg);
+    color: var(--orv-text);
+    font-family: var(--orv-font-ui);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--orv-focus-ring);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

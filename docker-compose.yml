@@ -1,0 +1,82 @@
+# ============================================================
+# ORVEXA — Self-host stack
+#   docker compose up --build
+# ============================================================
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: orvexa-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: orvexa
+      POSTGRES_PASSWORD: orvexa
+      POSTGRES_DB: orvexa
+      TZ: Asia/Jakarta
+      PGTZ: Asia/Jakarta
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orvexa -d orvexa"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: orvexa-redis
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Jakarta
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: orvexa-web
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Jakarta
+      DATABASE_URL: postgres://orvexa:orvexa@postgres:5432/orvexa
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    container_name: orvexa-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Jakarta
+      DATABASE_URL: postgres://orvexa:orvexa@postgres:5432/orvexa
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:
