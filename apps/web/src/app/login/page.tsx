@@ -1,6 +1,9 @@
 import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { signIn } from "@/lib/auth";
 
 async function authenticate(formData: FormData): Promise<void> {
@@ -28,62 +31,47 @@ export default async function LoginPage({
   const { error } = await searchParams;
 
   return (
-    <main className="grid min-h-screen place-items-center bg-canvas p-6">
-      <div className="w-full max-w-sm rounded-lg border border-line bg-surface p-6">
+    <main className="grid min-h-screen place-items-center bg-background p-6">
+      <div className="w-full max-w-sm rounded-lg border border-border bg-card p-6">
         <div className="flex items-center gap-2">
-          <span className="grid h-8 w-8 place-items-center rounded-md bg-brand text-sm font-semibold text-brand-fg">
+          <span className="grid h-8 w-8 place-items-center rounded-md bg-primary text-sm font-semibold text-primary-foreground">
             O
           </span>
           <div>
-            <h1 className="text-sm font-semibold text-fg">ORVEXA</h1>
-            <p className="text-xs text-fg-faint">Your AI Workforce</p>
+            <h1 className="text-sm font-semibold text-foreground">ORVEXA</h1>
+            <p className="text-xs text-muted-foreground">Your AI Workforce</p>
           </div>
         </div>
 
         <form action={authenticate} className="mt-6 space-y-4">
-          <div>
-            <label htmlFor="email" className="block text-xs text-fg-muted">
-              Email
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              className="mt-1 w-full rounded-md border border-line bg-canvas px-3 py-2 text-sm text-fg"
-            />
+          <div className="space-y-1">
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" name="email" type="email" autoComplete="email" required />
           </div>
 
-          <div>
-            <label htmlFor="password" className="block text-xs text-fg-muted">
-              Password
-            </label>
-            <input
+          <div className="space-y-1">
+            <Label htmlFor="password">Password</Label>
+            <Input
               id="password"
               name="password"
               type="password"
               autoComplete="current-password"
               required
-              className="mt-1 w-full rounded-md border border-line bg-canvas px-3 py-2 text-sm text-fg"
             />
           </div>
 
           {error ? (
-            <p role="alert" className="text-xs text-danger">
+            <p role="alert" className="text-xs text-destructive">
               Email atau password salah.
             </p>
           ) : null}
 
-          <button
-            type="submit"
-            className="w-full rounded-md bg-brand px-3 py-2 text-sm font-medium text-brand-fg hover:bg-brand-hover"
-          >
+          <Button type="submit" className="w-full">
             Sign in
-          </button>
+          </Button>
         </form>
 
-        <p className="mt-4 text-center text-xs text-fg-faint">
+        <p className="mt-4 text-center text-xs text-muted-foreground">
           Demo: seed user dari <span className="font-mono">npm run db:seed</span>
         </p>
       </div>

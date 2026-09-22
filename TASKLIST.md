@@ -6,7 +6,7 @@
 > Dokumen terkait: [PRD](./ORVEXA_Final_PRD_v1.0.md) · [docs/](./docs/README.md)
 
 **Terakhir diupdate:** 2026-09-22
-**Fase saat ini:** Fase 1 — Fondasi (hampir selesai; sisa follow-up)
+**Fase saat ini:** Fase 2 — Kolaborasi (Rooms & Realtime)
 
 ---
 
@@ -33,7 +33,7 @@
 | Fase | Nama | Status | Progres |
 |---|---|---|---|
 | 0 | Perencanaan & Dokumentasi | 🟢 Selesai | 11/11 |
-| 1 | Fondasi | 🟡 Berjalan | 9/9 core · 2 follow-up |
+| 1 | Fondasi | 🟢 Selesai | 13/13 |
 | 2 | Kolaborasi (Rooms & Realtime) | ⚪ Belum | 0/7 |
 | 3 | AI Infrastructure Department | ⚪ Belum | 0/6 |
 | 4 | Agent Intelligence | ⚪ Belum | 0/7 |
@@ -73,13 +73,11 @@
 - [x] **F1-07** Auth.js (next-auth v5) credentials login + proteksi login
 - [x] **F1-08** AppShell 3 kolom + sidebar navigasi + **theme switcher (5 tema)**
 - [x] **F1-05b** Migrasi domain lanjutan (`0001_core_domains.sql`, 22 tabel) + parity Drizzle schema
-
-### Follow-up (belum)
-
-- [ ] **F1-02b** Adopsi shadcn/ui (komponen primitif) atau komponen internal sendiri
-- [ ] **F1-07b** Upgrade auth: database session + OAuth (Google/GitHub) + RBAC helper + Argon2id
-- [ ] **F1-09** ESLint (flat config) + Prettier + CI (GitHub Actions)
-- [ ] **F1-10** Halaman placeholder untuk route navigasi (`/rooms`, `/agents`, dst)
+- [x] **F1-02b** **shadcn/ui** (components.json, `cn()`, Button/Card/Input/Badge/Label) + mapping token Orvexa
+- [x] **F1-07b** **Argon2id** + **RBAC helper** + **session database revocable** + **OAuth (Google/GitHub)**
+- [x] **F1-09** **ESLint** (flat config) + **Prettier** + **CI GitHub Actions**
+- [x] **F1-10** **16 halaman placeholder** untuk semua route navigasi
+- [x] **F1-11** Migrasi `0002_auth_sessions.sql` (sessions + accounts)
 
 **Verifikasi yang sudah dilakukan:**
 
@@ -91,6 +89,10 @@
 ✓ npm run db:migrate                   → 0000 + 0001 applied (41 tabel)
 ✓ npm run db:seed                      → 5 tema, 26 skill, 5 agent
 ✓ enum & index HNSW (pgvector)         → 15 enum, 2 index embedding
+✓ npm run lint                        → 0 error (flat config)
+✓ login credentials end-to-end        → session row dibuat, sid di JWT
+✓ proteksi route                      → / tanpa cookie → 307 /login
+✓ db:migrate                          → 0002_auth_sessions.sql applied
 ✓ SHOW timezone                        → Asia/Jakarta (now = +07)
 ✓ worker start                         → connect Redis, consumer group dibuat
 ```
@@ -211,6 +213,13 @@ orvexa/
 
 > Catat perubahan penting, keputusan yang direvisi, atau fitur baru. Terbaru di atas.
 
+### 2026-09-22 (sesi 4 — Fase 1 selesai)
+
+- **R-014** — **F1-02b** selesai: shadcn/ui terpasang (Button, Card, Input, Badge, Label) dengan variabel shadcn dipetakan ke token Orvexa sehingga 5 tema tetap berlaku.
+- **R-015** — **F1-07b** selesai: password **Argon2id**, **RBAC** (`lib/rbac.ts`), **session database revocable** (`sessions` + `accounts`, migrasi `0002`), **OAuth Google/GitHub** opsional. Login credentials diuji end-to-end; route terproteksi redirect ke `/login`.
+- **R-016** — **F1-09** selesai: ESLint flat config (`eslint-config-next`), Prettier, dan CI GitHub Actions (web: lint/typecheck/build; worker: compile/import).
+- **R-017** — **F1-10** selesai: 16 halaman placeholder untuk seluruh route navigasi (tidak ada 404).
+
 ### 2026-09-22 (sesi 3 — migrasi domain lanjutan)
 
 - **R-013** — **F1-05b selesai**: migrasi `0001_core_domains.sql` (22 tabel: projects, tasks, approvals, decisions, documents, knowledge + pgvector, agent runs/events/memory, permissions, MCP, usage) + parity Drizzle schema. DB total **41 tabel, 15 enum, 2 index HNSW**. Diverifikasi typecheck, build, dan query `information_schema`.
@@ -246,7 +255,7 @@ orvexa/
 | ~~OQ-06~~ | Auth session | ✅ **JWT (MVP)** → roadmap DB session |
 | OQ-03 | Object storage default | 🟡 Usul: **volume lokal** (MinIO/S3 opsional) |
 | OQ-04 | Provider default untuk seed agent | 🟡 Belum ditentukan (butuh kredensial saat Fase 3) |
-| OQ-07 | UI primitives: shadcn/ui vs komponen internal | 🟡 Belum (lihat F1-02b) |
+| ~~OQ-07~~ | UI primitives | ✅ **shadcn/ui** (di-mapping ke token Orvexa) |
 | OQ-08 | Orkestrasi worker: Redis Streams consumer group vs arq/Celery | 🟡 Usul: **Redis Streams** (sudah dipakai) |
 
 ---
@@ -264,7 +273,7 @@ Urutan yang disarankan:
    npm run dev:worker     # butuh: cd worker && python -m venv .venv && pip install -r requirements.txt
    ```
 2. Mulai **Fase 2**: Rooms + SSE (F2-01 → F2-04 berurutan). Migrasi tabel sudah lengkap.
-3. Opsional sebelum Fase 2: **F1-07b** (DB session + RBAC helper) bila mau auth lebih matang.
+3. Fase 1 **selesai** — langsung mulai Fase 2 (F2-01 Rooms) memakai `db`, `requirePermission`, dan komponen `ui/`.
 4. Putuskan **OQ-03 / OQ-04 / OQ-07** sebelum menyentuh storage, provider, dan UI kit.
 
 **Catatan penting:** `.env` sudah dibuat dengan secret ter-generate (gitignored). Jangan commit.

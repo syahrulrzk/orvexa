@@ -1,4 +1,6 @@
 import { AppShell } from "@/components/app-shell";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { requireSessionContext } from "@/lib/session";
 
 const STATS = [
   { label: "Active Projects", value: "0" },
@@ -25,16 +27,9 @@ const STATUS_COLOR: Record<string, string> = {
   disabled: "bg-neutral",
 };
 
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-line bg-surface p-4">
-      <p className="text-overline uppercase text-fg-faint">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-fg">{value}</p>
-    </div>
-  );
-}
+export default async function DashboardPage() {
+  const ctx = await requireSessionContext();
 
-export default function DashboardPage() {
   return (
     <AppShell
       title="Dashboard"
@@ -45,15 +40,15 @@ export default function DashboardPage() {
             {AGENTS.map((a) => (
               <li
                 key={a.name}
-                className="flex items-center gap-2 rounded-md border border-line bg-canvas px-3 py-2"
+                className="flex items-center gap-2 rounded-md border border-border bg-canvas px-3 py-2"
               >
                 <span
                   className={`h-2 w-2 rounded-full ${STATUS_COLOR[a.status] ?? "bg-neutral"}`}
                   aria-hidden
                 />
                 <div className="min-w-0">
-                  <p className="truncate text-sm text-fg">{a.name}</p>
-                  <p className="truncate text-xs text-fg-faint">{a.role}</p>
+                  <p className="truncate text-sm text-foreground">{a.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">{a.role}</p>
                 </div>
               </li>
             ))}
@@ -62,26 +57,46 @@ export default function DashboardPage() {
       }
     >
       <div className="space-y-6 p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Selamat datang, {ctx.user.displayName}</CardTitle>
+            <CardDescription>
+              {ctx.company
+                ? `Workspace: ${ctx.company.name} · role: ${ctx.company.role}`
+                : "Belum tergabung di company mana pun."}
+            </CardDescription>
+          </CardHeader>
+        </Card>
+
         <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
           {STATS.map((s) => (
-            <StatCard key={s.label} label={s.label} value={s.value} />
+            <Card key={s.label}>
+              <CardContent className="p-4">
+                <p className="text-overline uppercase text-fg-faint">{s.label}</p>
+                <p className="mt-1 text-2xl font-semibold text-foreground">{s.value}</p>
+              </CardContent>
+            </Card>
           ))}
         </section>
 
         <section className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-lg border border-line bg-surface p-4">
-            <h2 className="text-sm font-semibold text-fg">AI Activity</h2>
-            <p className="mt-3 text-sm text-fg-muted">
-              Belum ada aktivitas. Agent akan muncul di sini saat mulai bekerja.
-            </p>
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>AI Activity</CardTitle>
+              <CardDescription>
+                Belum ada aktivitas. Agent akan muncul di sini saat mulai bekerja.
+              </CardDescription>
+            </CardHeader>
+          </Card>
 
-          <div className="rounded-lg border border-line bg-surface p-4">
-            <h2 className="text-sm font-semibold text-fg">Needs Attention</h2>
-            <p className="mt-3 text-sm text-fg-muted">
-              Tidak ada approval, incident, atau task yang butuh perhatian.
-            </p>
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Needs Attention</CardTitle>
+              <CardDescription>
+                Tidak ada approval, incident, atau task yang butuh perhatian.
+              </CardDescription>
+            </CardHeader>
+          </Card>
         </section>
       </div>
     </AppShell>

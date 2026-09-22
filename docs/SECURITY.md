@@ -61,10 +61,9 @@ Orvexa menjalankan **agent otonom** yang bisa mengakses sistem nyata (server, ne
 ### 3.1 Mekanisme
 
 - **Auth.js (NextAuth v5)** sebagai penyedia sesi.
-- Metode: **email + password** (wajib) dan **OAuth** (Google/GitHub) opsional.
-- **MVP:** sesi JWT disimpan pada cookie `httpOnly; Secure; SameSite=Lax` dengan masa berlaku pendek (12 jam).
-  > Roadmap F1-07: pindah ke **database session** + adapter Drizzle untuk revokasi & OAuth.
-- Password: scaffold memakai **scrypt** (tanpa dependency native); target produksi **Argon2id** (fallback bcrypt cost ≥ 12).
+- Metode: **email + password** (wajib) dan **OAuth (Google/GitHub)** otomatis aktif bila env diisi.
+- **Sesi revocable:** cookie JWT `httpOnly; SameSite=Lax` (12 jam) **+ row di tabel `sessions`**. JWT menyimpan `sid`, dan setiap request divalidasi ke database (ada, belum direvokasi, belum kedaluwarsa). Logout & "force logout semua device" merevokasi row tersebut.
+- Password: **Argon2id** (`@node-rs/argon2`), dengan fallback verifikasi **scrypt** untuk hash lama.
 
 ### 3.2 Persyaratan
 

@@ -26,6 +26,27 @@
   --color-neutral: var(--orv-neutral);
   --color-focus: var(--orv-focus-ring);
 
+  /* Pemetaan variabel shadcn/ui → token Orvexa (agar 5 tema tetap berlaku) */
+  --color-background: var(--orv-bg);
+  --color-foreground: var(--orv-text);
+  --color-card: var(--orv-surface);
+  --color-card-foreground: var(--orv-text);
+  --color-popover: var(--orv-surface-raised);
+  --color-popover-foreground: var(--orv-text);
+  --color-primary: var(--orv-primary);
+  --color-primary-foreground: var(--orv-primary-fg);
+  --color-secondary: var(--orv-bg-subtle);
+  --color-secondary-foreground: var(--orv-text);
+  --color-muted: var(--orv-bg-subtle);
+  --color-muted-foreground: var(--orv-text-muted);
+  --color-accent: var(--orv-bg-subtle);
+  --color-accent-foreground: var(--orv-text);
+  --color-destructive: var(--orv-danger);
+  --color-destructive-foreground: #ffffff;
+  --color-border: var(--orv-border);
+  --color-input: var(--orv-border);
+  --color-ring: var(--orv-focus-ring);
+
   --font-ui: var(--orv-font-ui);
   --font-mono: var(--orv-font-mono);
 

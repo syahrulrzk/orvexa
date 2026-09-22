@@ -126,6 +126,43 @@ export const companyMembers = pgTable(
 );
 
 // ============================================================
+// SESSIONS & ACCOUNTS (auth — migrasi 0002)
+// ============================================================
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: text("id").primaryKey().$defaultFn(() => newId("ses")),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  },
+  (t) => [index("sessions_user_idx").on(t.userId)],
+);
+
+export const accounts = pgTable(
+  "accounts",
+  {
+    id: text("id").primaryKey().$defaultFn(() => newId("acc")),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("accounts_provider_uq").on(t.provider, t.providerAccountId),
+    index("accounts_user_idx").on(t.userId),
+  ],
+);
+
+// ============================================================
 // PROVIDER & CREDENTIAL
 // ============================================================
 export const aiProviders = pgTable(
