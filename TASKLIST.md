@@ -289,6 +289,130 @@ orvexa/
 ```
 
 ---
+## Phase 10 — Virtual Office
+
+### Objective
+
+Create an interactive visual workspace where users can
+observe and interact with the Orvexa AI workforce across
+multiple departments.
+
+### Core Features
+
+- Virtual Office navigation
+- Department selection
+- 3D/isometric office visualization
+- Department rooms
+- Agent workstations
+- Agent presence/status
+- Real-time agent activity
+- Agent current task
+- Agent current room
+- Clickable agents
+- Agent detail panel
+- Enter room action
+- Open task action
+- Open agent action
+- Department overview
+- Mini map / floor map
+- Camera controls
+- Zoom / pan
+- Floor switching
+- Live activity feed
+
+### Department Structure
+
+Virtual Office must support multiple departments:
+
+- Infrastructure
+- Sales
+- Marketing
+- Finance
+- Project Management
+- HR
+- Customer Support
+- Technology
+
+Infrastructure is the initial department.
+
+### Agent Visualization
+
+Each agent may be represented as a
+workstation/person/avatar inside the office.
+
+Example:
+
+Network Agent
+    ↓
+Workstation
+    ↓
+🟢 Online
+    ↓
+"Analyzing network traffic"
+    ↓
+Task: INC-1042
+    ↓
+Room: #incident-network-002
+
+### Agent Interaction
+
+When the user clicks an agent:
+
+┌─────────────────────────────┐
+│ Network Agent          🟢   │
+│ Network Engineer            │
+├─────────────────────────────┤
+│ Currently Working           │
+│ Analyzing network traffic   │
+│                             │
+│ Current Task                │
+│ INC-1042                    │
+│                             │
+│ Room                        │
+│ #incident-network-002       │
+│                             │
+│ [Open Agent]                │
+│ [View Task]                 │
+│ [Enter Room]                │
+└─────────────────────────────┘
+
+### Department Interaction
+
+User can:
+
+- Select department
+- Enter department
+- View all agents
+- View active agents
+- View department activity
+- View active tasks
+- View alerts
+- Enter specific room
+- Inspect individual agents
+
+### Real-Time State
+
+Virtual Office should reflect existing Orvexa state:
+
+Agent
+→ Status
+→ Current Task
+→ Current Room
+→ Activity
+→ Tool Usage
+→ Approval State
+
+Example statuses:
+
+🟢 Idle
+🔵 Thinking
+🟡 Working
+🟠 Waiting Approval
+🔴 Error
+⚫ Disabled
+
+These statuses already exist in the PRD and can become the
+visual state of the agents inside the Virtual Office.
 
 ## 10. Backlog Fitur Baru (Belum masuk PRD)
 
