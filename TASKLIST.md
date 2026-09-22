@@ -34,7 +34,7 @@
 |---|---|---|---|
 | 0 | Perencanaan & Dokumentasi | 🟢 Selesai | 11/11 |
 | 1 | Fondasi | 🟢 Selesai | 13/13 |
-| 2 | Kolaborasi (Rooms & Realtime) | ⚪ Belum | 0/7 |
+| 2 | Kolaborasi (Rooms & Realtime) | 🟡 Berjalan | 4/7 + 2 partial |
 | 3 | AI Infrastructure Department | ⚪ Belum | 0/6 |
 | 4 | Agent Intelligence | ⚪ Belum | 0/7 |
 | 5 | Governance | ⚪ Belum | 0/7 |
@@ -99,15 +99,29 @@
 
 ---
 
-## 4. Fase 2 — Kolaborasi (Rooms & Realtime)
+## 4. Fase 2 — Kolaborasi (Rooms & Realtime) 🟡
 
-- [ ] **F2-01** CRUD Rooms (+ tipe: general/department/incident/project/war_room)
-- [ ] **F2-02** Room members (human + agent)
-- [ ] **F2-03** Message persistence + message types
-- [ ] **F2-04** SSE Gateway (Redis Pub/Sub → browser), reconnect `Last-Event-ID`
-- [ ] **F2-05** Composer: mention agent, slash command, attachment
+- [x] **F2-01** CRUD Rooms + API `/api/v1/rooms` (tipe general/department/incident/project/war_room)
+- [x] **F2-02** Room members (human + agent) + API add/remove
+- [x] **F2-03** Message persistence + API list/kirim + publish event
+- [x] **F2-04** SSE Gateway `/api/v1/rooms/[id]/events` (Redis Pub/Sub + keep-alive ping)
+- [~] **F2-05** Composer + mention agent ✅ · slash command & attachment ⬜
 - [ ] **F2-06** Threads + reactions + search pesan
-- [ ] **F2-07** Agent status pill realtime + typing indicator
+- [~] **F2-07** Agent status pill + indikator live ✅ · typing indicator ⬜
+
+**File baru Fase 2:**
+
+```text
+src/lib/redis.ts            publisher + pub/sub hub
+src/lib/events.ts           publishRoomEvent()
+src/lib/api.ts              helper auth/permission/response
+src/lib/validation.ts       skema zod
+src/app/api/v1/rooms/...    6 route (CRUD, members, messages, events SSE)
+src/app/api/v1/agents/...   list agent
+src/app/rooms/page.tsx      daftar room (data nyata)
+src/app/rooms/[id]/page.tsx detail room
+src/components/rooms/...    create-room-form, room-view (SSE), types
+```
 
 ---
 
@@ -213,6 +227,10 @@ orvexa/
 
 > Catat perubahan penting, keputusan yang direvisi, atau fitur baru. Terbaru di atas.
 
+### 2026-09-22 (sesi 5 — Fase 2 dimulai)
+
+- **R-018** — **Fase 2 (F2-01…F2-04) selesai**: API Rooms + members + messages, SSE gateway realtime berbasis Redis Pub/Sub, halaman `/rooms` dan `/rooms/[id]` dengan composer & mention. Diverifikasi end-to-end: create room → buka SSE → kirim pesan → event `message.created` diterima klien, pesan tersimpan di DB.
+
 ### 2026-09-22 (sesi 4 — Fase 1 selesai)
 
 - **R-014** — **F1-02b** selesai: shadcn/ui terpasang (Button, Card, Input, Badge, Label) dengan variabel shadcn dipetakan ke token Orvexa sehingga 5 tema tetap berlaku.
@@ -272,8 +290,8 @@ Urutan yang disarankan:
    npm run dev            # http://localhost:3000  (login: lead@orvexa.dev / orvexa12345)
    npm run dev:worker     # butuh: cd worker && python -m venv .venv && pip install -r requirements.txt
    ```
-2. Mulai **Fase 2**: Rooms + SSE (F2-01 → F2-04 berurutan). Migrasi tabel sudah lengkap.
-3. Fase 1 **selesai** — langsung mulai Fase 2 (F2-01 Rooms) memakai `db`, `requirePermission`, dan komponen `ui/`.
+2. Lanjutkan **Fase 2**: F2-05 (slash command + attachment), F2-06 (threads/reactions/search), F2-07 (typing indicator).
+3. Lalu **Fase 3**: worker menjalankan agent dan mengirim balasan ke room (provider abstraction + streaming token).
 4. Putuskan **OQ-03 / OQ-04 / OQ-07** sebelum menyentuh storage, provider, dan UI kit.
 
 **Catatan penting:** `.env` sudah dibuat dengan secret ter-generate (gitignored). Jangan commit.

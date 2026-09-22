@@ -562,7 +562,14 @@ Default: baca = `allow`, sensitif = `approval_required`, destruktif = `disabled`
 
 ```text
 [x] Spesifikasi kontrak (dokumen ini)
-[ ] Implementasi route handlers (Fase 2+)
+[~] Implementasi route handlers
+      [x] /api/v1/rooms            (list, create)
+      [x] /api/v1/rooms/:id        (detail, patch, delete)
+      [x] /api/v1/rooms/:id/members
+      [x] /api/v1/rooms/:id/messages
+      [x] /api/v1/rooms/:id/events (SSE)
+      [x] /api/v1/agents           (list)
+      [ ] sisanya → Fase 3+
 [ ] OpenAPI schema otomatis
 [ ] SDK client (opsional, komunitas)
 ```
