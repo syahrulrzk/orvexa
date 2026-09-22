@@ -33,7 +33,7 @@
 | Fase | Nama | Status | Progres |
 |---|---|---|---|
 | 0 | Perencanaan & Dokumentasi | 🟢 Selesai | 11/11 |
-| 1 | Fondasi | 🟡 Berjalan | 8/8 core · 3 follow-up |
+| 1 | Fondasi | 🟡 Berjalan | 9/9 core · 2 follow-up |
 | 2 | Kolaborasi (Rooms & Realtime) | ⚪ Belum | 0/7 |
 | 3 | AI Infrastructure Department | ⚪ Belum | 0/6 |
 | 4 | Agent Intelligence | ⚪ Belum | 0/7 |
@@ -72,12 +72,11 @@
 - [x] **F1-06** Seed: 5 tema, 26 skill, company demo, user demo, 5 agent infra
 - [x] **F1-07** Auth.js (next-auth v5) credentials login + proteksi login
 - [x] **F1-08** AppShell 3 kolom + sidebar navigasi + **theme switcher (5 tema)**
+- [x] **F1-05b** Migrasi domain lanjutan (`0001_core_domains.sql`, 22 tabel) + parity Drizzle schema
 
 ### Follow-up (belum)
 
 - [ ] **F1-02b** Adopsi shadcn/ui (komponen primitif) atau komponen internal sendiri
-- [ ] **F1-05b** Migrasi tabel sisanya (projects, tasks, approvals, decisions, documents,
-      knowledge, runs, memories, mcp, usage) — masih di `docs/DATABASE_SCHEMA.md`
 - [ ] **F1-07b** Upgrade auth: database session + OAuth (Google/GitHub) + RBAC helper + Argon2id
 - [ ] **F1-09** ESLint (flat config) + Prettier + CI (GitHub Actions)
 - [ ] **F1-10** Halaman placeholder untuk route navigasi (`/rooms`, `/agents`, dst)
@@ -89,8 +88,9 @@
 ✓ npm run build -w apps/web            → Next.js 16.3.5 build sukses
 ✓ python -m py_compile (worker)        → lolos
 ✓ docker compose build worker          → image terbangun
-✓ npm run db:migrate                   → 0000_init.sql applied (19 tabel)
+✓ npm run db:migrate                   → 0000 + 0001 applied (41 tabel)
 ✓ npm run db:seed                      → 5 tema, 26 skill, 5 agent
+✓ enum & index HNSW (pgvector)         → 15 enum, 2 index embedding
 ✓ SHOW timezone                        → Asia/Jakarta (now = +07)
 ✓ worker start                         → connect Redis, consumer group dibuat
 ```
@@ -211,6 +211,10 @@ orvexa/
 
 > Catat perubahan penting, keputusan yang direvisi, atau fitur baru. Terbaru di atas.
 
+### 2026-09-22 (sesi 3 — migrasi domain lanjutan)
+
+- **R-013** — **F1-05b selesai**: migrasi `0001_core_domains.sql` (22 tabel: projects, tasks, approvals, decisions, documents, knowledge + pgvector, agent runs/events/memory, permissions, MCP, usage) + parity Drizzle schema. DB total **41 tabel, 15 enum, 2 index HNSW**. Diverifikasi typecheck, build, dan query `information_schema`.
+
 ### 2026-09-22 (sesi 2 — scaffold)
 
 - **R-012** — Scaffold **Fase 1**: monorepo, Next.js 16, worker Python, Docker, migrasi awal (19 tabel), seed, auth credentials, AppShell + 5 tema. Semua diverifikasi (typecheck, build, migrate, seed, timezone, worker).
@@ -259,8 +263,8 @@ Urutan yang disarankan:
    npm run dev            # http://localhost:3000  (login: lead@orvexa.dev / orvexa12345)
    npm run dev:worker     # butuh: cd worker && python -m venv .venv && pip install -r requirements.txt
    ```
-2. Selesaikan follow-up Fase 1: **F1-05b** (tabel sisanya) lalu **F1-07b** (DB session + RBAC).
-3. Mulai **Fase 2**: Rooms + SSE (butuh F2-01 s/d F2-04 berurutan).
+2. Mulai **Fase 2**: Rooms + SSE (F2-01 → F2-04 berurutan). Migrasi tabel sudah lengkap.
+3. Opsional sebelum Fase 2: **F1-07b** (DB session + RBAC helper) bila mau auth lebih matang.
 4. Putuskan **OQ-03 / OQ-04 / OQ-07** sebelum menyentuh storage, provider, dan UI kit.
 
 **Catatan penting:** `.env` sudah dibuat dengan secret ter-generate (gitignored). Jangan commit.

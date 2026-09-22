@@ -25,7 +25,7 @@ Orvexa memberi seorang IT Infrastructure Lead sebuah **AI Infrastructure Departm
 ## 🚀 Quickstart (Docker)
 
 ```bash
-git clone https://github.com/<user>/orvexa.git
+git clone https://github.com/syahrulrzk/orvexa.git
 cd orvexa
 cp .env.example .env
 
