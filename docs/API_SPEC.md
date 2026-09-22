@@ -568,6 +568,12 @@ Default: baca = `allow`, sensitif = `approval_required`, destruktif = `disabled`
       [x] /api/v1/rooms/:id/members
       [x] /api/v1/rooms/:id/messages
       [x] /api/v1/rooms/:id/events (SSE)
+      [x] /api/v1/rooms/:id/typing (typing indicator)
+      [x] /api/v1/rooms/:id/search (cari pesan)
+      [x] /api/v1/rooms/:id/attachments (upload)
+      [x] /api/v1/attachments/:id  (download)
+      [x] /api/v1/messages/:id/reactions (+ delete)
+      [x] /api/v1/messages/:id/thread  (list + kirim)
       [x] /api/v1/agents           (list)
       [ ] sisanya → Fase 3+
 [ ] OpenAPI schema otomatis

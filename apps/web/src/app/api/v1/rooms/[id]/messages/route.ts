@@ -106,6 +106,7 @@ export async function POST(
       kind: data.kind,
       content: data.content,
       mentions: data.mentions ?? [],
+      meta: data.meta ?? {},
     })
     .returning();
 
@@ -121,6 +122,7 @@ export async function POST(
       kind: message.kind,
       content: message.content,
       mentions: message.mentions,
+      meta: message.meta,
       created_at: message.createdAt,
       user_name: auth.user.displayName,
     },

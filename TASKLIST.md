@@ -6,7 +6,7 @@
 > Dokumen terkait: [PRD](./ORVEXA_Final_PRD_v1.0.md) · [docs/](./docs/README.md)
 
 **Terakhir diupdate:** 2026-09-22
-**Fase saat ini:** Fase 2 — Kolaborasi (Rooms & Realtime)
+**Fase saat ini:** Fase 3 — AI Infrastructure Department
 
 ---
 
@@ -34,7 +34,7 @@
 |---|---|---|---|
 | 0 | Perencanaan & Dokumentasi | 🟢 Selesai | 11/11 |
 | 1 | Fondasi | 🟢 Selesai | 13/13 |
-| 2 | Kolaborasi (Rooms & Realtime) | 🟡 Berjalan | 4/7 + 2 partial |
+| 2 | Kolaborasi (Rooms & Realtime) | 🟢 Selesai | 7/7 |
 | 3 | AI Infrastructure Department | ⚪ Belum | 0/6 |
 | 4 | Agent Intelligence | ⚪ Belum | 0/7 |
 | 5 | Governance | ⚪ Belum | 0/7 |
@@ -99,28 +99,36 @@
 
 ---
 
-## 4. Fase 2 — Kolaborasi (Rooms & Realtime) 🟡
+## 4. Fase 2 — Kolaborasi (Rooms & Realtime) 🟢
 
 - [x] **F2-01** CRUD Rooms + API `/api/v1/rooms` (tipe general/department/incident/project/war_room)
 - [x] **F2-02** Room members (human + agent) + API add/remove
 - [x] **F2-03** Message persistence + API list/kirim + publish event
 - [x] **F2-04** SSE Gateway `/api/v1/rooms/[id]/events` (Redis Pub/Sub + keep-alive ping)
-- [~] **F2-05** Composer + mention agent ✅ · slash command & attachment ⬜
-- [ ] **F2-06** Threads + reactions + search pesan
-- [~] **F2-07** Agent status pill + indikator live ✅ · typing indicator ⬜
+- [x] **F2-05** Composer: mention agent, **slash command** (`/help`, `/me`, `/alert`), **attachment** (upload + download terproteksi)
+- [x] **F2-06** **Threads** (panel balasan + agregat `message_threads`), **reactions** (toggle emoji), **search** pesan per room
+- [x] **F2-07** Agent status pill + indikator live + **typing indicator** (ephemeral via Redis)
 
-**File baru Fase 2:**
+**API baru:**
 
 ```text
-src/lib/redis.ts            publisher + pub/sub hub
-src/lib/events.ts           publishRoomEvent()
-src/lib/api.ts              helper auth/permission/response
-src/lib/validation.ts       skema zod
-src/app/api/v1/rooms/...    6 route (CRUD, members, messages, events SSE)
-src/app/api/v1/agents/...   list agent
-src/app/rooms/page.tsx      daftar room (data nyata)
-src/app/rooms/[id]/page.tsx detail room
-src/components/rooms/...    create-room-form, room-view (SSE), types
+POST   /api/v1/rooms/[id]/typing            typing indicator (ephemeral)
+GET    /api/v1/rooms/[id]/search?q=         cari pesan di room
+POST   /api/v1/rooms/[id]/attachments       upload attachment (multipart)
+GET    /api/v1/attachments/[id]             download (cek company)
+POST   /api/v1/messages/[id]/reactions      tambah reaksi
+DELETE /api/v1/messages/[id]/reactions/[emoji]
+GET    /api/v1/messages/[id]/thread         list balasan thread
+POST   /api/v1/messages/[id]/thread         kirim balasan thread
+```
+
+**File baru/lain:**
+
+```text
+src/lib/redis.ts, events.ts, api.ts, validation.ts, storage.ts, messages.ts
+src/lib/db/schema.ts         + messageThreads, messageReactions
+drizzle/0003_message_threads_reactions.sql
+src/components/rooms/room-view.tsx   (realtime + reactions + thread + search + slash + upload)
 ```
 
 ---
@@ -228,6 +236,10 @@ orvexa/
 
 > Catat perubahan penting, keputusan yang direvisi, atau fitur baru. Terbaru di atas.
 
+### 2026-09-22 (sesi 7 — Fase 2 selesai)
+
+- **R-022** — **Fase 2 selesai (7/7)**: slash command, attachment (upload + download terproteksi, allowlist ekstensi + batas ukuran), threads, reactions, pencarian pesan (trigram index), dan typing indicator. Migrasi `0003_message_threads_reactions.sql`. Diverifikasi end-to-end via HTTP + SSE: `message.created`, `reaction.added`, `typing`, thread reply, upload.
+
 ### 2026-09-22 (sesi 6 — keputusan LangGraph + HTTPS)
 
 - **R-020** — **ADR-007**: MVP **tidak** memakai LangGraph. Orkestrator worker dibuat **swappable** lewat `orchestrator/strategy.py` (`Strategy` protocol + `DefaultStrategy`) agar LangGraph/alternatif bisa ditambah tanpa rewrite. Trigger tinjau ulang didokumentasikan di ARCHITECTURE §10.6.
@@ -296,8 +308,8 @@ Urutan yang disarankan:
    npm run dev            # http://localhost:3000  (login: lead@orvexa.dev / orvexa12345)
    npm run dev:worker     # butuh: cd worker && python -m venv .venv && pip install -r requirements.txt
    ```
-2. Lanjutkan **Fase 2**: F2-05 (slash command + attachment), F2-06 (threads/reactions/search), F2-07 (typing indicator).
-3. Lalu **Fase 3**: worker menjalankan agent dan mengirim balasan ke room (provider abstraction + streaming token).
+2. Mulai **Fase 3**: worker menjalankan agent dan mengirim balasan ke room (provider abstraction + streaming token + `agent_runs`).
+3. Sertakan kredensial provider di `ai_credentials` (terenkripsi) sebelum agent bisa benar-benar membalas.
 
 **Deployment (domain + HTTPS):**
 

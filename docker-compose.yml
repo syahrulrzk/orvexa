@@ -51,8 +51,11 @@ services:
       TZ: Asia/Jakarta
       DATABASE_URL: postgres://orvexa:orvexa@postgres:5432/orvexa
       REDIS_URL: redis://redis:6379
+      UPLOAD_DIR: /app/data/uploads
     ports:
       - "3000:3000"
+    volumes:
+      - uploads:/app/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -104,5 +107,6 @@ services:
 volumes:
   pgdata:
   redisdata:
+  uploads:
   caddydata:
   caddyconfig:

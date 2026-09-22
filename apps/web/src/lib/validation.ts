@@ -39,6 +39,7 @@ export const createMessageSchema = z.object({
   kind: z.enum(["text", "alert"]).default("text"),
   mentions: z.array(z.string()).max(50).optional(),
   thread_root_id: z.string().nullish(),
+  meta: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const listMessagesQuerySchema = z.object({

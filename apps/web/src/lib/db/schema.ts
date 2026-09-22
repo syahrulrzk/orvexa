@@ -396,6 +396,38 @@ export const messages = pgTable(
   (t) => [index("messages_room_time_idx").on(t.roomId, t.createdAt.desc())],
 );
 
+export const messageThreads = pgTable(
+  "message_threads",
+  {
+    id: text("id").primaryKey().$defaultFn(() => newId("thr")),
+    roomId: text("room_id")
+      .notNull()
+      .references(() => rooms.id, { onDelete: "cascade" }),
+    rootMessageId: text("root_message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    replyCount: integer("reply_count").notNull().default(0),
+    lastReplyAt: timestamp("last_reply_at", { withTimezone: true }),
+    participantIds: text("participant_ids").array().notNull().default([]),
+  },
+  (t) => [uniqueIndex("message_threads_root_uq").on(t.rootMessageId)],
+);
+
+export const messageReactions = pgTable(
+  "message_reactions",
+  {
+    id: text("id").primaryKey().$defaultFn(() => newId("rea")),
+    messageId: text("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+    agentId: text("agent_id").references(() => agents.id, { onDelete: "cascade" }),
+    emoji: text("emoji").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("message_reactions_message_idx").on(t.messageId)],
+);
+
 // ============================================================
 // ACTIVITY & NOTIFICATIONS
 // ============================================================

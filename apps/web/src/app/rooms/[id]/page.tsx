@@ -1,12 +1,20 @@
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { notFound } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import { RoomView } from "@/components/rooms/room-view";
-import type { AgentOption, RoomMessage } from "@/components/rooms/types";
+import type { AgentOption, AttachmentMeta, MessageReaction, RoomMessage } from "@/components/rooms/types";
 import { Badge } from "@/components/ui/badge";
 import { db } from "@/lib/db";
-import { agents, messages, roomMembers, rooms, users } from "@/lib/db/schema";
+import {
+  agents,
+  messageReactions,
+  messages,
+  messageThreads,
+  roomMembers,
+  rooms,
+  users,
+} from "@/lib/db/schema";
 import { requireSessionContext } from "@/lib/session";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -17,6 +25,13 @@ const STATUS_COLOR: Record<string, string> = {
   error: "bg-danger",
   disabled: "bg-neutral",
 };
+
+function parseAttachments(meta: unknown): AttachmentMeta[] {
+  if (!meta || typeof meta !== "object") return [];
+  const value = (meta as { attachments?: unknown }).attachments;
+  if (!Array.isArray(value)) return [];
+  return value.filter((a): a is AttachmentMeta => typeof a === "object" && a !== null);
+}
 
 export default async function RoomDetailPage({
   params,
@@ -51,6 +66,7 @@ export default async function RoomDetailPage({
     .leftJoin(agents, eq(agents.id, roomMembers.agentId))
     .where(eq(roomMembers.roomId, id));
 
+  // Hanya pesan top-level yang ditampilkan; balasan thread dimuat on-demand.
   const rawMessages = await db
     .select({
       id: messages.id,
@@ -62,6 +78,7 @@ export default async function RoomDetailPage({
       kind: messages.kind,
       content: messages.content,
       mentions: messages.mentions,
+      meta: messages.meta,
       createdAt: messages.createdAt,
       userName: users.displayName,
       agentName: agents.displayName,
@@ -70,9 +87,55 @@ export default async function RoomDetailPage({
     .from(messages)
     .leftJoin(users, eq(users.id, messages.authorUserId))
     .leftJoin(agents, eq(agents.id, messages.authorAgentId))
-    .where(and(eq(messages.roomId, id), eq(messages.isDeleted, false)))
+    .where(
+      and(
+        eq(messages.roomId, id),
+        eq(messages.isDeleted, false),
+        isNull(messages.threadRootId),
+      ),
+    )
     .orderBy(desc(messages.createdAt))
     .limit(50);
+
+  const messageIds = rawMessages.map((m) => m.id);
+
+  const reactionRows =
+    messageIds.length > 0
+      ? await db
+          .select({
+            messageId: messageReactions.messageId,
+            emoji: messageReactions.emoji,
+            userId: messageReactions.userId,
+          })
+          .from(messageReactions)
+          .where(inArray(messageReactions.messageId, messageIds))
+      : [];
+
+  const threadRows =
+    messageIds.length > 0
+      ? await db
+          .select({ rootMessageId: messageThreads.rootMessageId, replyCount: messageThreads.replyCount })
+          .from(messageThreads)
+          .where(inArray(messageThreads.rootMessageId, messageIds))
+      : [];
+
+  const reactionsByMessage = new Map<string, Map<string, MessageReaction>>();
+  for (const r of reactionRows) {
+    let perEmoji = reactionsByMessage.get(r.messageId);
+    if (!perEmoji) {
+      perEmoji = new Map();
+      reactionsByMessage.set(r.messageId, perEmoji);
+    }
+    const existing = perEmoji.get(r.emoji);
+    if (existing) {
+      existing.count += 1;
+      existing.mine = existing.mine || r.userId === ctx.user.id;
+    } else {
+      perEmoji.set(r.emoji, { emoji: r.emoji, count: 1, mine: r.userId === ctx.user.id });
+    }
+  }
+
+  const replyCountByMessage = new Map(threadRows.map((t) => [t.rootMessageId, t.replyCount]));
 
   const initialMessages: RoomMessage[] = rawMessages.reverse().map((m) => ({
     id: m.id,
@@ -87,10 +150,18 @@ export default async function RoomDetailPage({
     createdAt: m.createdAt.toISOString(),
     authorName: m.agentName ?? m.userName ?? null,
     authorRole: m.agentRole ?? null,
+    attachments: parseAttachments(m.meta),
+    reactions: [...(reactionsByMessage.get(m.id)?.values() ?? [])],
+    replyCount: replyCountByMessage.get(m.id) ?? 0,
   }));
 
   const agentRows = await db
-    .select({ id: agents.id, name: agents.name, displayName: agents.displayName, status: agents.status })
+    .select({
+      id: agents.id,
+      name: agents.name,
+      displayName: agents.displayName,
+      status: agents.status,
+    })
     .from(agents)
     .where(and(eq(agents.companyId, companyId), isNull(agents.deletedAt)))
     .orderBy(asc(agents.name));
@@ -125,9 +196,7 @@ export default async function RoomDetailPage({
                   <p className="truncate text-sm text-foreground">
                     {m.agentName ?? m.userName ?? "unknown"}
                   </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {m.agentRole ?? m.role}
-                  </p>
+                  <p className="truncate text-xs text-muted-foreground">{m.agentRole ?? m.role}</p>
                 </div>
               </li>
             ))}
@@ -145,6 +214,7 @@ export default async function RoomDetailPage({
           initialMessages={initialMessages}
           agents={agentOptions}
           currentUserId={ctx.user.id}
+          currentUserName={ctx.user.displayName}
         />
       </div>
     </AppShell>

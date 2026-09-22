@@ -1,3 +1,16 @@
+export type AttachmentMeta = {
+  id: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+};
+
+export type MessageReaction = {
+  emoji: string;
+  count: number;
+  mine: boolean;
+};
+
 export type RoomMessage = {
   id: string;
   roomId: string;
@@ -11,6 +24,9 @@ export type RoomMessage = {
   createdAt: string;
   authorName: string | null;
   authorRole: string | null;
+  attachments: AttachmentMeta[];
+  reactions: MessageReaction[];
+  replyCount: number;
 };
 
 export type AgentOption = {
@@ -18,3 +34,5 @@ export type AgentOption = {
   label: string;
   status: string;
 };
+
+export const QUICK_REACTIONS = ["👍", "✅", "🔥", "👀", "⚠️"] as const;

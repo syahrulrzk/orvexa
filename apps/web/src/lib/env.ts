@@ -13,6 +13,8 @@ const envSchema = z.object({
   ORVEXA_MASTER_KEY: z.string().default(""),
   INTERNAL_API_TOKEN: z.string().default(""),
   TZ: z.string().default("Asia/Jakarta"),
+  UPLOAD_DIR: z.string().default("./data/uploads"),
+  MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),
 });
 
 export const env = envSchema.parse({
@@ -23,6 +25,8 @@ export const env = envSchema.parse({
   ORVEXA_MASTER_KEY: process.env.ORVEXA_MASTER_KEY,
   INTERNAL_API_TOKEN: process.env.INTERNAL_API_TOKEN,
   TZ: process.env.TZ,
+  UPLOAD_DIR: process.env.UPLOAD_DIR,
+  MAX_UPLOAD_BYTES: process.env.MAX_UPLOAD_BYTES,
 });
 
 /** Timezone aplikasi — wajib Asia/Jakarta (lihat docs/ARCHITECTURE.md §10.4). */
