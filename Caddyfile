@@ -1,0 +1,30 @@
+# ============================================================
+# ORVEXA — Caddyfile (reverse proxy + HTTPS otomatis)
+# Aktifkan dengan: docker compose --profile proxy up -d
+# Domain diambil dari env ORVEXA_DOMAIN (default: originlabs.my.id)
+# ============================================================
+
+{$ORVEXA_DOMAIN:originlabs.my.id} {
+	encode zstd gzip
+
+	# SSE (realtime room) butuh response tanpa buffering.
+	# flush_interval -1 = jangan buffer, kirim tiap chunk langsung.
+	reverse_proxy web:3000 {
+		flush_interval -1
+		header_up X-Real-IP {remote_host}
+	}
+
+	# Header keamanan dasar (lihat docs/SECURITY.md §9)
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

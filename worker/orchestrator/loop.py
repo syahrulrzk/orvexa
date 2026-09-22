@@ -13,7 +13,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .strategy import Strategy
 
 logger = logging.getLogger("orvexa.orchestrator")
 
@@ -44,29 +47,35 @@ class Job:
 
 
 class Orchestrator:
-    """Menjalankan satu run agent."""
+    """Menjalankan satu run agent.
 
-    def __init__(self, publisher: "EventPublisher") -> None:
+    Strategi orkestrasi bersifat pluggable (lihat ADR-007) sehingga
+    implementasi default bisa diganti tanpa mengubah alur job/event.
+    """
+
+    def __init__(self, publisher: "EventPublisher", strategy: "Strategy | None" = None) -> None:
         self._publisher = publisher
+        if strategy is None:
+            from .strategy import DefaultStrategy
+
+            strategy = DefaultStrategy(publisher)
+        self._strategy = strategy
 
     async def handle(self, job: Job) -> None:
-        logger.info("run start", extra={"job_id": job.job_id, "agent_id": job.agent_id,
-                                        "trace_id": job.trace_id})
+        logger.info(
+            "run start",
+            extra={
+                "job_id": job.job_id,
+                "agent_id": job.agent_id,
+                "strategy": self._strategy.name,
+                "trace_id": job.trace_id,
+            },
+        )
         try:
-            await self._run(job)
+            await self._strategy.run(job, self)
         except Exception:  # noqa: BLE001 - nanti: persist sebagai run failed
             logger.exception("run failed", extra={"job_id": job.job_id})
             await self._publisher.agent_status(job, "error")
-
-    async def _run(self, job: Job) -> None:
-        # 1. Muat konteks (room history, memory, knowledge) → Fase 3/4
-        # 2. Evaluate goal
-        # 3. Guardrail: permission + budget
-        # 4. Optional approval gate (simpan checkpoint, STOP)
-        # 5. Eksekusi tool / delegasi
-        # 6. Persist run + events + memory
-        await self._publisher.agent_status(job, "thinking")
-        await self._publisher.agent_status(job, "idle")
 
 
 class EventPublisher:

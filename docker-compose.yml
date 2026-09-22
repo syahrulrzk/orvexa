@@ -77,6 +77,32 @@ services:
       redis:
         condition: service_healthy
 
+  # ============================================================
+  # Reverse proxy + HTTPS otomatis (opsional)
+  #   docker compose --profile proxy up -d
+  # Butuh domain sudah mengarah ke IP server ini.
+  # ============================================================
+  caddy:
+    image: caddy:2-alpine
+    container_name: orvexa-caddy
+    profiles: ["proxy"]
+    restart: unless-stopped
+    environment:
+      ORVEXA_DOMAIN: ${ORVEXA_DOMAIN:-originlabs.my.id}
+      TZ: Asia/Jakarta
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - web
+
 volumes:
   pgdata:
   redisdata:
+  caddydata:
+  caddyconfig:

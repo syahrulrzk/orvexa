@@ -486,6 +486,57 @@ date                                        # harus menunjukkan WIB (+07)
 docker compose exec postgres psql -U orvexa -c "SHOW timezone;"   # → Asia/Jakarta
 ```
 
+### 10.5 Akses, Domain & HTTPS
+
+Ada dua mode akses:
+
+**A. Dev / akses langsung (HTTP, port 3000)** — cukup untuk uji cepat lewat IP server:
+
+```bash
+docker compose up -d --build
+# akses: http://<IP-SERVER>:3000
+```
+
+Set `AUTH_URL` sesuai alamat yang dipakai, mis. `http://203.0.113.10:3000`.
+
+**B. Prod / domain + HTTPS (Caddy)** — untuk `originlabs.my.id`:
+
+```bash
+# 1. pastikan DNS A record originlabs.my.id → IP server
+# 2. set di .env:
+#    AUTH_URL=https://originlabs.my.id
+#    ORVEXA_DOMAIN=originlabs.my.id
+# 3. jalankan dengan profil proxy
+docker compose --profile proxy up -d --build
+```
+
+Caddy otomatis menerbitkan & memperbarui sertifikat Let's Encrypt (port 80/443 harus terbuka).
+
+**Wajib untuk SSE di belakang proxy:** response tidak boleh di-buffer.
+
+```text
+Caddy  : reverse_proxy web:3000 { flush_interval -1 }   ← sudah ada di Caddyfile
+Nginx  : proxy_buffering off;  proxy_cache off;  proxy_read_timeout 3600s;
+```
+
+**Auth di belakang proxy:** `trustHost: true` sudah diset di `lib/auth.ts`. Bila pakai HTTPS, `AUTH_URL` **wajib** https agar cookie sesi ditandai Secure.
+
+> Catatan: saat diakses via HTTPS, cookie sesi memakai prefix `__Secure-`; ini normal.
+
+### 10.6 Keputusan: LangGraph (ADR-007)
+
+**MVP tidak memakai LangGraph.** Kebutuhan kita (kolaborasi multi-agent berbasis room + approval async) tidak sepenuhnya cocok dengan model graph per-run, dan state checkpoint sudah kita miliki (`agent_runs.state` + `agent_events`).
+
+Konsekuensi: orkestrator dibuat **swappable** di belakang interface, sehingga LangGraph (atau Pydantic AI / LlamaIndex Workflows / OpenAI Agents SDK) bisa ditambahkan nanti **tanpa rewrite**.
+
+**Trigger untuk meninjau ulang:**
+
+```text
+- Logic agent jadi graph kompleks dengan banyak conditional/branch
+- Butuh durable retry & replay (time-travel) yang canggih
+- Tim mau integrasi tracing LangSmith
+```
+
 ---
 
 ## 11. Observability
@@ -530,3 +581,5 @@ docker compose exec postgres psql -U orvexa -c "SHOW timezone;"   # → Asia/Jak
 | ADR-004 | SSE untuk realtime | Sederhana, auto-reconnect | Client→server tetap HTTP |
 | ADR-005 | Agent run async & checkpoint-based | Approval tidak blocking | Perlu state machine run |
 | ADR-006 | Multi-tenant via `company_id` + RLS | Isolasi data kuat | Setiap query harus scoped |
+| ADR-007 | **Tidak** memakai LangGraph sebagai dependency inti (MVP) | Overlap schema checkpoint, model kolaborasi room ≠ graph per-run, bobot dependency OSS | Orkestrator dibuat swappable di belakang interface |
+| ADR-008 | **Caddy** sebagai reverse proxy + HTTPS otomatis | Sederhana, auto Let's Encrypt, streaming SSE aman | Perlu domain mengarah ke server |

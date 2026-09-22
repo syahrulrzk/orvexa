@@ -220,12 +220,18 @@ orvexa/
 | NB-17 | Plugin system untuk tool kustom (non-MCP) | Ekstensibilitas | Rendah | Ide |
 | NB-18 | Impersonation / view-as (admin debug) | Support | Rendah | Ide |
 | NB-19 | Timezone per-user override (default tetap WIB) | UX global | Rendah | Ide |
+| NB-20 | Adopsi LangGraph (atau Pydantic AI / LlamaIndex Workflows) sebagai strategi orkestrasi | Kekuatan graph/HITL | Rendah (trigger-based) | Ide |
 
 ---
 
 ## 11. Revision Log
 
 > Catat perubahan penting, keputusan yang direvisi, atau fitur baru. Terbaru di atas.
+
+### 2026-09-22 (sesi 6 — keputusan LangGraph + HTTPS)
+
+- **R-020** — **ADR-007**: MVP **tidak** memakai LangGraph. Orkestrator worker dibuat **swappable** lewat `orchestrator/strategy.py` (`Strategy` protocol + `DefaultStrategy`) agar LangGraph/alternatif bisa ditambah tanpa rewrite. Trigger tinjau ulang didokumentasikan di ARCHITECTURE §10.6.
+- **R-021** — **ADR-008**: **Caddy** ditambahkan sebagai reverse proxy opsional (`--profile proxy`) untuk `originlabs.my.id` dengan HTTPS otomatis + `flush_interval -1` agar SSE tidak di-buffer. Env `ORVEXA_DOMAIN` + `AUTH_URL` ditambahkan ke `.env.example`. Konfigurasi diverifikasi dengan `caddy validate`.
 
 ### 2026-09-22 (sesi 5 — Fase 2 dimulai)
 
@@ -292,6 +298,19 @@ Urutan yang disarankan:
    ```
 2. Lanjutkan **Fase 2**: F2-05 (slash command + attachment), F2-06 (threads/reactions/search), F2-07 (typing indicator).
 3. Lalu **Fase 3**: worker menjalankan agent dan mengirim balasan ke room (provider abstraction + streaming token).
+
+**Deployment (domain + HTTPS):**
+
+```bash
+# dev di server (langsung)
+AUTH_URL=http://<IP-SERVER>:3000 docker compose up -d --build
+
+# prod via domain
+# .env: AUTH_URL=https://originlabs.my.id, ORVEXA_DOMAIN=originlabs.my.id
+docker compose --profile proxy up -d --build
+```
+
+Panduan lengkap: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) §10.5.
 4. Putuskan **OQ-03 / OQ-04 / OQ-07** sebelum menyentuh storage, provider, dan UI kit.
 
 **Catatan penting:** `.env` sudah dibuat dengan secret ter-generate (gitignored). Jangan commit.
