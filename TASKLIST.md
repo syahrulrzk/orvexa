@@ -6,7 +6,7 @@
 > Dokumen terkait: [PRD](./ORVEXA_Final_PRD_v1.0.md) · [docs/](./docs/README.md)
 
 **Terakhir diupdate:** 2026-09-24
-**Fase saat ini:** Fase 6 — Integrations & MCP (F6-01 selesai)
+**Fase saat ini:** Fase 6 selesai (7/7) — selanjutnya: Phase 10 Virtual Office
 
 ---
 
@@ -38,7 +38,7 @@
 | 3 | AI Infrastructure Department | 🟢 Selesai | 9/9 |
 | 4 | Agent Intelligence | 🟢 Selesai | 7/7 |
 | 5 | Governance | 🟢 Selesai | 7/7 |
-| 6 | Integrations & MCP | 🟡 Berjalan | 4/7 |
+| 6 | Integrations & MCP | 🟢 Selesai | 7/7 |
 
 **Legenda status fase:** 🟢 Selesai · 🟡 Berjalan · ⚪ Belum mulai · 🔴 Blocked
 
@@ -360,9 +360,35 @@ tools.ts: +agent.delegate, +memory.save, +kb.search
       `MCP_MIKROTIK_URL` / `MCP_FORTIGATE_URL` → tools + grant NOC otomatis.
       Kit `common.py` kini mendukung handler async (await di task terpisah).
       Test: 39 unittest + smoke e2e 8 server vs MCP client worker.
-- [ ] **F6-05** Integrasi n8n
-- [ ] **F6-06** Tool sensitif wajib approval
-- [ ] **F6-07** Notifikasi keluar (email/Slack/Telegram)
+- [x] **F6-05** Integrasi n8n
+      — `lib/n8n.ts`: outbound ter-signature (kontrak HMAC F5-07) ke
+      `N8N_WEBHOOK_URL` + parser inbound 3 aksi (post_message, trigger_agent,
+      ping). Route `/webhooks/n8n` (HMAC + anti-replay + rate limit):
+      post_message → pesan system di room (broadcast SSE); trigger_agent →
+      enqueue `agent.run` (jalur sama dengan mention, trigger `source: n8n`).
+      Wire: `approval.requested` & alert monitoring diteruskan ke n8n
+      (fire & forget). Multi-company webhook tercatat di Backlog.
+- [x] **F6-06** Tool sensitif wajib approval
+      — `evaluateMcpPermission()` (F6-06): default berbasis risiko —
+      high/critical/requiresApproval → approval_required; low/medium (semua
+      tool bawaan Orvexa read-only) → allow; override `agent_permissions`
+      per key `mcp.<server>.<tool>` menang, kondisi gagal → fail-closed.
+      Fix bug F6-01: tool MCP tidak lagi 403 sebagai unknown key.
+      Alur approval F5-03 penuh untuk MCP: authorize membuat row approvals
+      + event room + resume; keputusan approve TIDAK mengeksekusi di web
+      (R-027) — worker mengirim `approval_id` pada authorize berikutnya,
+      dikonsumsi SEKALI (colom `consumed_at` di payload), args persis
+      yang diajukan. Audit guard test 5 kombinasi tool sensitif lintas
+      server → approval_required.
+- [x] **F6-07** Notifikasi keluar (email/Slack/Telegram)
+      — `lib/notify.ts`: 3 kanal (Slack Incoming Webhook, Telegram Bot API,
+      SMTP email via nodemailer opsional — dimuat `createRequire`,
+      bundler-safe) dengan formatter pure per kanal + `notifyAll()`
+      (Promise.allSettled, selalu resolve, fail-open: kanal tak terkonfigurasi
+      → skipped, gagal → log saja). Wire: approval requested/resolved +
+      alert monitoring kritis diteruskan ke semua kanal ter-set (fire &
+      forget, tidak memblokir alur bisnis). Env: `SLACK_WEBHOOK_URL`,
+      `TELEGRAM_BOT_TOKEN`+`TELEGRAM_CHAT_ID`, `SMTP_HOST/PORT/USER/PASS/FROM`.
 
 ---
 
@@ -536,6 +562,7 @@ visual state of the agents inside the Virtual Office.
 | ID | Fitur | Nilai | Prioritas | Status |
 |---|---|---|---|---|
 | NB-01 | MFA / TOTP untuk owner & admin | Keamanan | Tinggi | Ide |
+| NB-21 | Webhook n8n multi-company (company_id di payload) | Multi-tenant | Rendah | Ide |
 | NB-02 | SSO (SAML / OIDC) | Enterprise | Sedang | Ide |
 | NB-03 | Custom Brand Theme (logo, warna company) | PRD §29 future | Sedang | Ide |
 | NB-04 | Agent marketplace / template agent shareable | OSS community | Sedang | Ide |
@@ -561,6 +588,33 @@ visual state of the agents inside the Virtual Office.
 ## 11. Revision Log
 
 > Catat perubahan penting, keputusan yang direvisi, atau fitur baru. Terbaru di atas.
+
+### 2026-09-24 (sesi 24 — F6-05/06/07 — Fase 6 selesai)
+
+- **R-085** — **F6-05 selesai**: integrasi n8n dua arah. Outbound memakai
+  kontrak signature yang SAMA dengan webhook masuk (R-064) sehingga n8n bisa
+  memverifikasi asal event; inbound mendukung 3 aksi — `post_message`
+  (pesan system + SSE), `trigger_agent` (enqueue job agent.run; agent
+  mengerjakan tugas & melapor ke room), `ping` (health check workflow).
+- **R-086** — **F6-06 selesai + fix bug F6-01**: sebelumnya SEMUA tool MCP
+  ditolak 403 di authorize karena `evaluatePermission()` memperlakukan key
+  `mcp.*` sebagai unknown (matrix builtin tidak memuatnya). Kini
+  `evaluateMcpPermission()`: default dari `mcp_tools.risk_level`/
+  `requires_approval` (fail-closed), override per agent tetap dihormati.
+  Tool MCP sensitif kini masuk alur approval F5-03 SUNGGUHAN — bukan
+  sekadar 202 tanpa row approval (sebelumnya resume tidak pernah terjadi).
+  Eksekusi sekali dijaga `consumed_at`; `decideApproval` tidak mengeksekusi
+  `mcp.*` di web (konsisten R-027).
+- **R-087** — **F6-07 selesai**: notifikasi keluar 3 kanal dengan prinsip
+  fail-open total — env kosong → skipped (bukan error), gagal kirim → log;
+  `notifyAll()` pakai `Promise.allSettled` sehingga satu kanal mati tidak
+  menahan lainnya. nodemailer dibuat opsional via `createRequire` (Turbopack
+  tidak mencoba bundle dependency yang belum terpasang — ditemukan saat build).
+- **R-088** — **FASE 6 SELESAI (7/7)**: 8 MCP server bawaan (prometheus,
+  grafana, wazuh, docker, kubernetes, unifi, mikrotik, fortigate) + client
+  worker + gate izin satu pintu + approval + n8n + notifikasi. Test total
+  68 web (node:test) + 39 Python (unittest) + smoke e2e 8 server.
+  Selanjutnya: Phase 10 Virtual Office.
 
 ### 2026-09-24 (sesi 23 — F6-04 MCP server UniFi, MikroTik, FortiGate)
 
