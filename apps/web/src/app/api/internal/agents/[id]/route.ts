@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { agents } from "@/lib/db/schema";
 import { publishRoomEvent } from "@/lib/events";
 import { authenticateInternal } from "@/lib/internal";
+import { publishOfficeEvent } from "@/lib/office";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +41,15 @@ export async function PATCH(
     .returning({ id: agents.id, status: agents.status });
 
   if (!updated) return apiError("NOT_FOUND", "Agent tidak ditemukan.", 404);
+
+  // Phase 10: status juga dipublikasikan ke channel global Virtual Office
+  // sehingga denah ikut berubah realtime tanpa per-room subscription.
+  await publishOfficeEvent("agent.status", {
+    agent_id: updated.id,
+    status: updated.status,
+    room_id: typeof body.room_id === "string" ? body.room_id : null,
+    ts: new Date().toISOString(),
+  });
 
   const roomId = typeof body.room_id === "string" ? body.room_id : null;
   if (roomId) {

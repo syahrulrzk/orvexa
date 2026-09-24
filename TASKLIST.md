@@ -6,7 +6,7 @@
 > Dokumen terkait: [PRD](./ORVEXA_Final_PRD_v1.0.md) · [docs/](./docs/README.md)
 
 **Terakhir diupdate:** 2026-09-24
-**Fase saat ini:** Fase 6 selesai (7/7) — selanjutnya: Phase 10 Virtual Office
+**Fase saat ini:** Fase 0–6 & Phase 10 selesai — Virtual Office live
 
 ---
 
@@ -430,7 +430,47 @@ orvexa/
 ```
 
 ---
-## Phase 10 — Virtual Office
+## Phase 10 — Virtual Office ✅ (selesai 2026-09-24)
+
+### Yang dibangun (MVP fungsional)
+
+- ✅ Virtual Office navigation (sidebar, ready) + halaman SSR `/virtual-office`
+- ✅ Department selection (lantai): Infrastructure / Security / Management —
+  inferensi otomatis dari role agent (`inferDepartment`), ekstensible
+- ✅ Isometric office visualization: grid workstation stagger CSS murni
+  (tanpa canvas/3D lib — ringan & konsisten design token)
+- ✅ Agent workstations + presence/status realtime (6 status PRD, lampu
+  pulse saat aktif, WS-01/WS-02…)
+- ✅ Agent current task (task aktif per agent) & current room (dari run
+  terakhir)
+- ✅ Clickable agents → panel detail (status, task, room, aksi)
+- ✅ Enter room / Lihat task / Kelola agent actions
+- ✅ Department overview (jumlah agent + yang aktif per lantai)
+- ✅ Floor switching (tab departemen)
+- ✅ Live activity feed via SSE global `orvexa.office` (agent.status +
+  activity.logged realtime; fallback snapshot)
+
+### API
+
+```text
+GET /api/v1/office          snapshot denah (departments, agents, summary, activity)
+GET /api/v1/office/events   SSE channel global (agent.status, activity.logged)
+```
+
+State tidak diduplikasi: Virtual Office hanya lapisan presentasi di atas
+`agents.status`, `tasks`, `agent_runs`, `activity_logs` yang sudah ada.
+Publish ke channel dilakukan dari PATCH internal status agent + `logActivity()`.
+
+### Yang belum (catat ke Backlog bila dibutuhkan)
+
+- Mini map / floor map multi-lantai, camera controls, zoom/pan — butuh
+  canvas/WebGL; MVP CSS grid sudah cukup untuk observasi.
+- Department rooms visual (klik room di denah) — room tetap diakses via
+  panel agent.
+
+---
+
+## Rencana awal Phase 10 (arsip)
 
 ### Objective
 
@@ -588,6 +628,23 @@ visual state of the agents inside the Virtual Office.
 ## 11. Revision Log
 
 > Catat perubahan penting, keputusan yang direvisi, atau fitur baru. Terbaru di atas.
+
+### 2026-09-24 (sesi 25 — Phase 10 Virtual Office)
+
+- **R-089** — **Virtual Office selesai (MVP fungsional)**: denah isometric CSS
+  murni (stagger workstation, lampu status pulse) per departemen —
+  Infrastructure / Security / Management dengan inferensi otomatis dari role
+  agent. Panel detail agent (status/task/room + aksi Enter Room / Lihat Task /
+  Kelola Agent) dan feed aktivitas live.
+- **R-090** — **State tidak diduplikasi**: snapshot dibaca langsung dari
+  `agents.status` + `tasks` aktif + `agent_runs` terakhir + `activity_logs`;
+  realtime via SSE channel global `orvexa.office` (publish dari PATCH status
+  internal + `logActivity`). API: `GET /api/v1/office` + `/office/events`.
+- **R-091** — Tanpa canvas/WebGL: MVP memakai CSS grid + transform sehingga
+  ringan, konsisten design token 5 tema, dan tidak menambah dependency.
+  Mini map/camera controls dicatat sebagai backlog bila dibutuhkan.
+- **R-092** — Sidebar: Virtual Office & MCP kini ready. Semua fase PRD
+  (0–6, Phase 10) selesai.
 
 ### 2026-09-24 (sesi 24 — F6-05/06/07 — Fase 6 selesai)
 

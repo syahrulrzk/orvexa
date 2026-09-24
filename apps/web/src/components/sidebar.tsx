@@ -20,6 +20,7 @@ import {
   DollarSign,
   Plug,
   Settings,
+  Building2,
 } from "lucide-react";
 
 type NavItem = {
@@ -98,6 +99,12 @@ const NAV: { section: string; items: NavItem[] }[] = [
         icon: Activity,
         ready: true,
       },
+      {
+        href: "/virtual-office",
+        label: "Virtual Office",
+        icon: Building2,
+        ready: true,
+      },
     ],
   },
   {
@@ -142,7 +149,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
         href: "/mcp",
         label: "MCP",
         icon: Plug,
-        ready: false,
+        ready: true,
       },
       {
         href: "/settings",

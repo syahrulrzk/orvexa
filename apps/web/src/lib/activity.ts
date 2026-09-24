@@ -1,6 +1,7 @@
 import { and, desc, eq, gt } from "drizzle-orm";
 
 import { redactSecrets } from "./redact";
+import { publishOfficeEvent } from "./office";
 import { db } from "./db";
 import { activityLogs, agents, users } from "./db/schema";
 import { publishRoomEvent } from "./events";
@@ -74,6 +75,18 @@ export async function logActivity(input: LogActivityInput): Promise<string> {
       input.actor.type === "agent" ? { agentId: input.actor.agentId } : undefined,
     );
   }
+
+  // Phase 10: feed aktivitas Virtual Office (global channel, best-effort).
+  await publishOfficeEvent("activity.logged", {
+    id,
+    action: input.action,
+    actor_type: input.actor.type,
+    actor_agent_id: input.actor.type === "agent" ? input.actor.agentId : null,
+    target_type: input.targetType ?? null,
+    target_id: input.targetId ?? null,
+    summary: input.summary ?? null,
+    ts: row.createdAt.toISOString(),
+  });
 
   return id;
 }
