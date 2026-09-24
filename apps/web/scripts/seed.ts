@@ -215,6 +215,7 @@ async function main(): Promise<void> {
   const schema = await import("../src/lib/db/schema");
   const { hashPassword } = await import("../src/lib/password");
   const { newId } = await import("../src/lib/ids");
+  const { defaultEffect } = await import("../src/lib/permissions");
   const { and, eq } = await import("drizzle-orm");
 
   // --- Themes (builtin) ---
@@ -495,6 +496,22 @@ async function main(): Promise<void> {
         .values({ id: newId("atl"), agentId, toolKey, isEnabled: true })
         .onConflictDoNothing();
       toolLinks += 1;
+
+      // F5-01: baris permission eksplisit per tool agar matrix terlihat &
+      // bisa dioverride dari UI. Efek mengikuti matrix default (TOOL_DEFAULTS)
+      // — tool sensitif dapat "approval_required", bukan "allow".
+      await db
+        .insert(schema.agentPermissions)
+        .values({
+          id: newId("apm"),
+          companyId: company.id,
+          agentId,
+          scopeType: "agent",
+          permission: toolKey,
+          effect: defaultEffect(toolKey),
+          conditions: {},
+        })
+        .onConflictDoNothing();
     }
   }
   console.log(`✓ agent skills: ${skillLinks} · agent tools: ${toolLinks}`);

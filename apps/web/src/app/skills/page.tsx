@@ -1,74 +1,99 @@
+import { asc, eq } from "drizzle-orm";
+
 import { AppShell } from "@/components/app-shell";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { db } from "@/lib/db";
+import { agentSkills, skills } from "@/lib/db/schema";
 import { requireSessionContext } from "@/lib/session";
-import { cookies } from "next/headers";
 
 export default async function SkillsPage() {
   const ctx = await requireSessionContext();
-  const cookieStore = await cookies();
+  const companyId = ctx.company?.id;
 
-  // Fetch skills from API
-  const skillsRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/v1/skills`, {
-    headers: {
-      Cookie: cookieStore.toString(),
-    },
-    cache: 'no-store',
-  });
+  if (!companyId) {
+    return (
+      <AppShell title="Skills">
+        <p className="p-6 text-sm text-muted-foreground">Belum tergabung di company mana pun.</p>
+      </AppShell>
+    );
+  }
 
-  const skillsData = await skillsRes.json();
-  const skills = skillsData.success ? skillsData.data.skills : [];
+  const skillRows = await db
+    .select()
+    .from(skills)
+    .where(eq(skills.companyId, companyId))
+    .orderBy(asc(skills.name));
+
+  const linkRows = await db
+    .select({ skillId: agentSkills.skillId })
+    .from(agentSkills);
+
+  const categories = [...new Set(skillRows.map((s) => s.category).filter(Boolean))] as string[];
 
   return (
-    <AppShell title="Skills">
-      <div className="space-y-6 p-6">
-        <div className="flex items-center justify-between">
+    <AppShell
+      title="Skills"
+      context={
+        <div className="space-y-5 p-4">
           <div>
-            <h2 className="text-2xl font-semibold">Skills</h2>
-            <p className="text-sm text-muted-foreground">
-              Katalog skill reusable yang bisa dipakai banyak agent.
+            <h2 className="text-overline uppercase text-fg-faint">Kategori</h2>
+            <ul className="mt-3 space-y-1.5 text-sm text-fg-muted">
+              {categories.map((c) => (
+                <li key={c} className="flex justify-between">
+                  <span className="capitalize">{c}</span>
+                  <span className="font-medium text-fg">{skillRows.filter((s) => s.category === c).length}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="rounded-md border border-line bg-canvas p-3">
+            <p className="text-xs text-fg-muted">
+              Skill di-inject ke system prompt agent saat run. Tautkan skill ke agent dari halaman Agents.
             </p>
           </div>
-          <Button>Create Skill</Button>
+        </div>
+      }
+    >
+      <div className="space-y-5 p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-fg">Skill Catalog</h2>
+            <p className="text-sm text-fg-muted">Kemampuan reusable yang bisa dipakai banyak agent sekaligus.</p>
+          </div>
+          <Badge variant="outline">{skillRows.length} skill</Badge>
         </div>
 
-        {skills.length === 0 ? (
+        {skillRows.length === 0 ? (
           <Card>
             <CardContent className="p-12 text-center">
-              <p className="text-muted-foreground">Belum ada skill. Buat skill pertama Anda.</p>
+              <p className="text-fg-muted">Belum ada skill terdaftar.</p>
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {skills.map((skill: any) => (
-              <Card key={skill.id}>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <CardTitle>{skill.name}</CardTitle>
-                    {skill.is_builtin && (
-                      <Badge variant="secondary">Builtin</Badge>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {skill.description && (
-                    <p className="text-sm text-muted-foreground mb-4">{skill.description}</p>
-                  )}
-                  {skill.category && (
-                    <Badge variant="outline" className="mb-4">{skill.category}</Badge>
-                  )}
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">
-                      {skill.agent_count || 0} agents
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(skill.created_at).toLocaleDateString('id-ID')}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {skillRows.map((skill) => {
+              const agentCount = linkRows.filter((l) => l.skillId === skill.id).length;
+              return (
+                <Card key={skill.id}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <CardTitle className="truncate">{skill.name}</CardTitle>
+                      {skill.isBuiltin ? <Badge variant="outline">builtin</Badge> : null}
+                    </div>
+                    {skill.category ? (
+                      <p className="text-xs capitalize text-fg-faint">{skill.category}</p>
+                    ) : null}
+                  </CardHeader>
+                  <CardContent>
+                    {skill.description ? (
+                      <p className="line-clamp-2 text-sm text-fg-muted">{skill.description}</p>
+                    ) : null}
+                    <p className="mt-3 text-xs text-fg-faint">{agentCount} agent memakai</p>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>

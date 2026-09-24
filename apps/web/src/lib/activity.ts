@@ -1,5 +1,6 @@
 import { and, desc, eq, gt } from "drizzle-orm";
 
+import { redactSecrets } from "./redact";
 import { db } from "./db";
 import { activityLogs, agents, users } from "./db/schema";
 import { publishRoomEvent } from "./events";
@@ -33,6 +34,10 @@ export type LogActivityInput = {
 /** Catat aktivitas + broadcast `activity.logged` ke room terkait (bila ada). */
 export async function logActivity(input: LogActivityInput): Promise<string> {
   const id = newId("act");
+  // F5-05: audit log bebas secret — redaksi dilakukan di SATU PINTU ini
+  // sehingga semua penulis log (28+ call site) otomatis aman.
+  const safeSummary = input.summary ? (redactSecrets(input.summary) as string) : null;
+  const safeMetadata = (redactSecrets(input.metadata ?? {}) ?? {}) as Record<string, unknown>;
   const [row] = await db
     .insert(activityLogs)
     .values({
@@ -46,8 +51,8 @@ export async function logActivity(input: LogActivityInput): Promise<string> {
       targetId: input.targetId ?? null,
       roomId: input.roomId ?? null,
       projectId: input.projectId ?? null,
-      summary: input.summary ?? null,
-      metadata: input.metadata ?? {},
+      summary: safeSummary,
+      metadata: safeMetadata,
       traceId: input.traceId ?? null,
     })
     .returning({ createdAt: activityLogs.createdAt });

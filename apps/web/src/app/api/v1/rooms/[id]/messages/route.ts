@@ -7,6 +7,7 @@ import { triggerAgentsFromMessage } from "@/lib/agent-trigger";
 import { agents, messages, rooms, users } from "@/lib/db/schema";
 import { publishRoomEvent } from "@/lib/events";
 import { newId } from "@/lib/ids";
+import { RATE_LIMITS, rateLimit } from "@/lib/ratelimit";
 import { createMessageSchema, listMessagesQuerySchema } from "@/lib/validation";
 
 async function loadRoomId(roomId: string, companyId: string) {
@@ -83,6 +84,15 @@ export async function POST(
 
   const denied = guardPermission(auth, "message.send");
   if (denied) return denied;
+
+  // F5-07: rate limit kirim pesan per user (anti-flood).
+  const rl = await rateLimit({ key: `msg:${auth.user.id}`, ...RATE_LIMITS.message });
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: { code: "RATE_LIMITED", message: "Terlalu banyak pesan. Coba lagi sebentar." } },
+      { status: 429, headers: { "Retry-After": String(rl.reset_sec) } },
+    );
+  }
 
   const { id } = await params;
   if (!(await loadRoomId(id, auth.company!.id))) {

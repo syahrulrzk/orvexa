@@ -20,12 +20,13 @@ async function memberOwned(id: string, companyId: string): Promise<boolean> {
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { memberId: string } }
+  { params }: { params: Promise<{ memberId: string }> }
 ): Promise<NextResponse> {
   const auth = await authenticate();
   if (auth instanceof NextResponse) return auth;
 
-  if (!(await memberOwned(params.memberId, auth.company!.id))) {
+  const { memberId } = await params;
+  if (!(await memberOwned(memberId, auth.company!.id))) {
     return apiError("NOT_FOUND", "Member tidak ditemukan.", 404);
   }
 
@@ -42,7 +43,7 @@ export async function PATCH(
   const [current] = await db
     .select({ role: companyMembers.role })
     .from(companyMembers)
-    .where(eq(companyMembers.id, params.memberId))
+    .where(eq(companyMembers.id, memberId))
     .limit(1);
 
   if (current?.role === "owner" && data.role !== "owner") {
@@ -63,7 +64,7 @@ export async function PATCH(
   const [row] = await db
     .update(companyMembers)
     .set({ role: data.role })
-    .where(eq(companyMembers.id, params.memberId))
+    .where(eq(companyMembers.id, memberId))
     .returning();
 
   await db.insert(activityLogs).values({
@@ -83,12 +84,13 @@ export async function PATCH(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { memberId: string } }
+  { params }: { params: Promise<{ memberId: string }> }
 ): Promise<NextResponse> {
   const auth = await authenticate();
   if (auth instanceof NextResponse) return auth;
 
-  if (!(await memberOwned(params.memberId, auth.company!.id))) {
+  const { memberId } = await params;
+  if (!(await memberOwned(memberId, auth.company!.id))) {
     return apiError("NOT_FOUND", "Member tidak ditemukan.", 404);
   }
 
@@ -99,7 +101,7 @@ export async function DELETE(
   const [current] = await db
     .select({ role: companyMembers.role, userId: companyMembers.userId })
     .from(companyMembers)
-    .where(eq(companyMembers.id, params.memberId))
+    .where(eq(companyMembers.id, memberId))
     .limit(1);
 
   if (current?.role === "owner") {
@@ -118,7 +120,7 @@ export async function DELETE(
 
   const [row] = await db
     .delete(companyMembers)
-    .where(eq(companyMembers.id, params.memberId))
+    .where(eq(companyMembers.id, memberId))
     .returning();
 
   await db.insert(activityLogs).values({

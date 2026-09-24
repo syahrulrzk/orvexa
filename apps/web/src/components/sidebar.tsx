@@ -17,6 +17,7 @@ import {
   FileCheck,
   UserPlus,
   Cpu,
+  DollarSign,
   Plug,
   Settings,
 } from "lucide-react";
@@ -48,7 +49,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
         href: "/projects",
         label: "Projects",
         icon: FolderKanban,
-        ready: false,
+        ready: true,
       },
       {
         href: "/tasks",
@@ -60,7 +61,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
         href: "/approvals",
         label: "Approvals",
         icon: ShieldCheck,
-        ready: false,
+        ready: true,
       },
     ],
   },
@@ -77,7 +78,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
         href: "/agents",
         label: "Agents",
         icon: Bot,
-        ready: false,
+        ready: true,
       },
       {
         href: "/skills",
@@ -129,7 +130,13 @@ const NAV: { section: string; items: NavItem[] }[] = [
         href: "/providers",
         label: "AI Providers",
         icon: Cpu,
-        ready: false,
+        ready: true,
+      },
+      {
+        href: "/costs",
+        label: "AI Costs",
+        icon: DollarSign,
+        ready: true,
       },
       {
         href: "/mcp",
@@ -141,7 +148,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
         href: "/settings",
         label: "Settings",
         icon: Settings,
-        ready: false,
+        ready: true,
       },
     ],
   },

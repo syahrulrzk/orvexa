@@ -107,6 +107,13 @@ class DefaultStrategy:
         provider_cfg = context.get("provider") or {}
         tool_defs = context.get("tools") or []
 
+        # F5-03: resume setelah keputusan approval — sampaikan hasil keputusan
+        # tanpa loop LLM (agent tidak memutuskan ulang; manusia yang memutuskan).
+        trigger = run_ctx.job.trigger or {}
+        if trigger.get("kind") == "approval.resume":
+            await self._resume_from_approval(run_ctx)
+            return
+
         provider = get_provider(
             str(provider_cfg.get("kind") or "openai"),
             api_key=str(provider_cfg.get("api_key") or ""),
@@ -336,6 +343,35 @@ class DefaultStrategy:
         )
 
         return render_tool_result(key, ok, result, error)
+
+    async def _resume_from_approval(self, run_ctx: "RunContext") -> None:
+        """Sampaikan hasil keputusan approval ke room & tutup run dengan rapi."""
+        trigger = run_ctx.job.trigger or {}
+        decision = str(trigger.get("decision") or "")
+        tool_key = str(trigger.get("tool_key") or "")
+        executed = bool(trigger.get("executed"))
+        exec_error = trigger.get("exec_error")
+
+        if decision == "approved" and executed:
+            text = (
+                f"✅ Approval untuk `{tool_key}` disetujui dan tool berhasil dijalankan. "
+                "Melanjutkan pekerjaan."
+            )
+        elif decision == "approved":
+            text = (
+                f"⚠️ Approval untuk `{tool_key}` disetujui, tapi eksekusi gagal"
+                + (f": {exec_error}" if exec_error else ".")
+                + " Saya tunggu instruksi lanjutan."
+            )
+        else:
+            text = (
+                f"❌ Approval untuk `{tool_key}` ditolak oleh manusia."
+                " Rencana terkait tidak dijalankan; mohon arahan alternatif."
+            )
+
+        run_ctx.add_event("approval.resume", {"decision": decision, "tool_key": tool_key})
+        await self._deliver(run_ctx, text, used_tools=False)
+        run_ctx.result = text
 
     async def _record_usage(
         self, run_ctx: "RunContext", usage: dict[str, int], latency_ms: int

@@ -6,7 +6,7 @@
 > Dokumen terkait: [PRD](./ORVEXA_Final_PRD_v1.0.md) · [docs/](./docs/README.md)
 
 **Terakhir diupdate:** 2026-09-22
-**Fase saat ini:** Fase 5 — Governance
+**Fase saat ini:** Fase 6 — Integrations & MCP
 
 ---
 
@@ -37,7 +37,7 @@
 | 2 | Kolaborasi (Rooms & Realtime) | 🟢 Selesai | 7/7 |
 | 3 | AI Infrastructure Department | 🟢 Selesai | 9/9 |
 | 4 | Agent Intelligence | 🟢 Selesai | 7/7 |
-| 5 | Governance | ⚪ Belum | 0/7 |
+| 5 | Governance | 🟡 Berjalan | 6/7 |
 | 6 | Integrations & MCP | ⚪ Belum | 0/7 |
 
 **Legenda status fase:** 🟢 Selesai · 🟡 Berjalan · ⚪ Belum mulai · 🔴 Blocked
@@ -227,15 +227,76 @@ tools.ts: +agent.delegate, +memory.save, +kb.search
 
 ---
 
-## 7. Fase 5 — Governance
+## 6b. Menu UI Completion (Fase 1–4) 🟢
 
-- [ ] **F5-01** Permission matrix (RBAC + ABAC) di BFF + runtime
-- [ ] **F5-02** RLS PostgreSQL aktif di semua tabel ber-`company_id`
-- [ ] **F5-03** Approval workflow (request → decide → resume checkpoint)
-- [ ] **F5-04** Enkripsi kredensial AES-256-GCM + rotasi + masking UI
-- [ ] **F5-05** Audit log append-only + redaksi secret
-- [ ] **F5-06** AI cost tracking
-- [ ] **F5-07** Rate limiting, CSP & security headers, webhook signature
+> Menuntaskan halaman placeholder yang tersisa dari menu implementation — backend Fase 1–4 sudah ada, UI-nya menyusul.
+
+- [x] **M-01** Agents: API CRUD (GET list + detail, POST, PATCH, DELETE) + skill/tool picker + provider & budget per agent
+- [x] **M-02** Agents: halaman UI (daftar + form create + panel edit + delete)
+- [x] **M-03** Providers: API CRUD (POST/PATCH/DELETE) + API key terenkripsi AES-256-GCM + rotasi + masking `last4`
+- [x] **M-04** Providers: halaman UI (daftar, tambah, rotasi key, enable/disable)
+- [x] **M-05** Decisions: halaman UI + API PATCH per-keputusan (approve/reject)
+- [x] **M-06** Documents: halaman UI + viewer/editor Markdown + versioning otomatis (v+1 saat edit final)
+- [x] **M-07** Projects: API CRUD baru (`/api/v1/projects`) + halaman UI dengan progress task
+- [x] **M-08** Sidebar: flag `ready` diperbarui (Agents, Projects, Providers kini hijau)
+
+**Perbaikan pre-existing yang ikut dikerjakan:**
+
+```text
+✓ RBAC: permission team.create/update/delete terdaftar (sebelumnya error TS)
+✓ Route params Next.js 16: teams/skills/themes/members [id] → Promise<{...}> (dibaca via await)
+✓ updateTeamSchema diekspor (sebelumnya diimpor tapi tidak diekspor)
+✓ next.config.mjs: allowedDevOrigins ["originlabs.my.id"] untuk HMR via domain
+```
+
+**Sisa placeholder (sesuai rencana fase):** Approvals (F5-03), Settings (F5-01), MCP (F6-01), Virtual Office (Fase 10).
+
+---
+
+## 7. Fase 5 — Governance ✅
+
+- [x] **F5-01** Permission matrix (RBAC + ABAC) di BFF + runtime
+      — `lib/permissions.ts` (evaluator pure, fail-closed), wire ke `executeTool` +
+      `/api/internal/tools/execute` (muat override `agent_permissions` + room type),
+      UI panel permission per tool di halaman Agents, seed rows default,
+      13 test `node:test`. Human RBAC (`rbac.ts`) ditambah permission `team.*`.
+- [x] **F5-02** RLS PostgreSQL aktif di semua tabel ber-`company_id`
+      — migrasi `0004_rls_company_isolation.sql`: policy `tenant_isolation` fail-closed
+      (key GUC `app.company_id`) di 40 tabel tenant; tabel anak tanpa `company_id` via join parent;
+      verifikasi otomatis di akhir migrasi; bukti fail-closed diuji dengan role non-superuser
+      (dengan context → 1 baris, tanpa → 0); helper `withTenant()` (`lib/db/tenant.ts`) siap
+      untuk aktivasi penuh (`ALTER ROLE orvexa NOSUPERUSER NOBYPASSRLS`) — staged rollout,
+      runtime belum berubah.
+- [x] **F5-03** Approval workflow (request → decide → resume checkpoint)
+      — `lib/approvals.ts`: `requestApproval` (dari executeTool saat 202: row approvals +
+      event room + agent waiting_approval), `decideApproval` (approve → tool dieksekusi SEKALI
+      via override allow ter-audit + enqueue job resume `approval.resume`; reject → resume
+      penolakan), `expireStaleApprovals` (24 jam, on-demand). API `/api/v1/approvals` (list)
+      + `/decide`; halaman /approvals (pending + riwayat); worker `_resume_from_approval`
+      menyampaikan hasil keputusan ke room tanpa loop LLM.
+- [x] **F5-04** Enkripsi kredensial AES-256-GCM + rotasi + masking UI
+      — sudah berjalan sejak Providers UI (AES-256-GCM via `lib/crypto.ts`, masking `last4`,
+      rotasi per-API-key dengan nonaktif-otomatis versi lama); F5-04 melengkapi:
+      **rotasi master key** tanpa downtime (`lib/keyring.ts` + `POST /api/v1/credentials/rotate`,
+      kredensial gagal-dekripsi tidak disentuh), 6 test crypto (roundtrip, IV unik, tamper GCM,
+      key version, masking), docs SECURITY §5.2.1.
+- [x] **F5-05** Audit log append-only + redaksi secret
+      — migrasi `0005_audit_append_only.sql`: trigger blok UPDATE/DELETE `activity_logs`
+      (diverifikasi: keduanya terbukti error); redaksi di satu pintu `logActivity()`
+      via `lib/redact.ts` (pola sk-/xox/ghp_/AKIA/JWT/Bearer/Telegram + field sensitif
+      api_key/secret/token/password/authorization + rekursif depth-cap); 10 test redaksi.
+- [x] **F5-06** AI cost tracking
+      — `lib/cost.ts` (agregasi ai_usage: summary periode, per-agent dengan posisi budget
+      harian, deret harian WIB, per-model) + API `GET /api/v1/costs` + halaman /costs
+      (kartu ringkasan, grafik batang 14 hari, tabel budget per agent, token 30 hari);
+      menu sidebar AI Costs; 5 test estimateCost.
+- [x] **F5-07** Rate limiting, CSP & security headers, webhook signature
+      — `lib/ratelimit.ts` (fixed-window Redis, atomic INCR+EXPIRE, fallback open-on-fail,
+      limit: login 10/15men/IP, kirim pesan 30/menit/user, webhook 60/menit/IP);
+      security headers di `next.config.mjs` (CSP dengan nonce dinamis — inline script
+      Next.js tetap jalan, frame-ancestors none, X-Content-Type-Options, Referrer-Policy,
+      Permissions-Policy); `lib/webhook.ts` HMAC-SHA256 `t=...,v1=...` toleransi 300 dtk
+      + endpoint `/webhooks/monitoring` (event monitoring → room ops); 5 test webhook.
 
 ---
 
@@ -446,6 +507,130 @@ visual state of the agents inside the Virtual Office.
 ## 11. Revision Log
 
 > Catat perubahan penting, keputusan yang direvisi, atau fitur baru. Terbaru di atas.
+
+### 2026-09-23 (sesi 19 — Halaman Settings + fix agregasi cost)
+
+- **R-067** — **Halaman /settings fungsional** (menu terakhir Fase 5 yang masih placeholder —
+  label "Fase 5 (F5-01)" di placeholder-nya adalah rencana awal yang tidak pernah masuk scope
+  F5-01…F5-07): 4 tab — Company (nama, tema default, timezone, 3 toggle kebijakan via
+  `companies.settings` jsonb merge, permission `settings.manage`), Preferensi (tema persist
+  ke `user_preferences.theme_key` + cookie, bahasa, 4 toggle notifikasi), Keamanan (daftar
+  sesi aktif dari tabel `sessions`, revoke per-sesi, logout semua perangkat + audit log),
+  dan Integrasi (status live AI provider/kredensial/Redis/webhook secret; MCP ditandai
+  planned untuk Fase 6). API baru: `GET/PATCH /api/v1/preferences`,
+  `PATCH /api/v1/company/settings`, `GET/DELETE /api/v1/security/sessions`,
+  `GET /api/v1/integrations/status`. Sidebar: Settings → ready.
+- **R-068** — **Bugfix `costByDay`**: parameter bind `$1` pada `AT TIME ZONE $1` membuat
+  Postgres gagal inferensi tipe (ambiguous `text`/`interval` → "could not determine data
+  type of parameter") saat dipakai di GROUP BY/ORDER BY. Fix: cast eksplisit
+  `AT TIME ZONE $1::text` di SELECT/GROUP BY/ORDER BY.
+
+### 2026-09-23 (sesi 18 — F5-07 Rate Limit, CSP & Webhook)
+- **R-064** — **Fase 5 selesai (7/7)**: penutupan berupa hardening — rate limiting fixed-window
+  Redis dengan fallback open-on-fail (kegagalan Redis tidak memblokir user), CSP nonce dinamis
+  (script inline Next.js tetap berjalan; style inline dipilih karena Tailwind runtime),
+  dan webhook HMAC dengan toleransi replay 5 menit sesuai API_SPEC.
+- **R-065** — Endpoint webhook pertama `/webhooks/monitoring`: alert monitoring diteruskan ke
+  room ops perusahaan sebagai pesan system (policy `monitoring.alert` + rate limit 60/menit).
+- **R-066** — Rate limit hanya di titik untrusted & mahal: login, kirim pesan, webhook —
+  API v1 internal (sudah terlindungi RBAC + budget) sengaja tidak dibatasi untuk menghindari
+  menahan workflow agent.
+
+### 2026-09-22 (sesi 17 — F5-06 AI Cost Tracking)
+
+- **R-062** — **F5-06 selesai**: sumber data `ai_usage` (tercatat worker sejak F3) kini punya
+  lapisan agregasi (`lib/cost.ts`) + API `/api/v1/costs` + halaman **/costs**: ringkasan
+  hari ini/7/30/total, grafik harian 14 hari (CSS bar, zona waktu WIB), tabel per-agent dengan
+  progress budget harian (hijau/merah saat >70%/100%), rincian per model, rekap token 30 hari.
+- **R-063** — `estimateCost()` pure + teruji (5 test); pembulatan 6 desimal konsisten dengan
+  kolom `numeric(12,6)`. Total test 34.
+
+### 2026-09-22 (sesi 16 — F5-05 Audit Append-Only & Redaksi)
+
+- **R-059** — **Append-only di level DB**: trigger `forbid_audit_mutation()` memblok UPDATE &
+  DELETE pada `activity_logs` (bukan sekadar konvensi aplikasi). Diverifikasi langsung: keduanya
+  terbukti error `check_violation`. Retensi (export lalu purge) jadi ranah admin DB, di luar app.
+- **R-060** — **Redaksi satu pintu**: `logActivity()` kini menjalankan `redactSecrets()` pada
+  `summary` & `metadata` sehingga 28+ call site otomatis bebas secret — pola dikenali dari nilai
+  (sk-, xoxb/p, ghp_, AKIA, JWT, Bearer, token Telegram) dan dari nama field (api_key, secret,
+  token, password, authorization, cookie, session). Rekursif dengan depth cap.
+- **R-061** — Total test 29 (permissions 13, crypto 6, redact 10).
+
+### 2026-09-22 (sesi 15 — F5-04 Credential Encryption & Rotation)
+
+- **R-057** — **F5-04 selesai**: fondasi (AES-256-GCM, masking last4, rotasi per-API-key) sudah
+  dibangun saat Providers UI; sesi ini menambahkan **rotasi master key tanpa downtime**
+  (`lib/keyring.ts`, API `POST /api/v1/credentials/rotate` admin-only dengan laporan
+  re-encrypt per kredensial; gagal dekripsi → tidak disentuh).
+- **R-058** — **Test runner pindah ke tsx** (`node --import tsx --test`): import extensionless
+  di modul lib tidak bisa diresep Node ESM murni; tsx (sudah devDep) menyelesaikannya.
+  Total test kini 19 (permissions 13 + crypto 6: roundtrip, IV unik, tamper GCM, key version,
+  masking last4, format kunci).
+
+### 2026-09-22 (sesi 14 — F5-03 Approval Workflow)
+
+- **R-053** — **F5-03 selesai**: siklus lengkap request → decide → resume. `executeTool` yang
+  mendapat `approval_required` (F5-01) kini membuat baris `approvals` + event `approval.requested`
+  + status agent `waiting_approval`; worker tetap menerima HTTP 202.
+- **R-054** — **Approval = kredensial sekali eksekusi**: menyetujui TIDAK mengubah matrix
+  permission; tool dieksekusi sekali lewat override allow yang ter-audit, lalu matrix kembali
+  berlaku untuk panggilan berikutnya. Keputusan selalu meng-enqueue job resume (`approval.resume`)
+  sehingga agent tidak dangling; worker menyampaikan hasil keputusan ke room tanpa loop LLM
+  (manusia yang memutuskan, agent tidak menegosiasi ulang).
+- **R-055** — **Expire on-demand**: approval pending >24 jam ditandai `expired` saat halaman/API
+  dibaca (tanpa scheduler di MVP); agent yang menunggu dikembalikan ke idle. Argumen tool dalam
+  payload approval disanitasi (kunci bernama secret/token/password di-redact, string panjang dipotong).
+- **R-056** — Halaman **/approvals** kini fungsional (pending dengan args preview + catatan keputusan,
+  riwayat), sidebar ready. API: `GET /api/v1/approvals`, `POST /api/v1/approvals/:id/decide`
+  (permission `approval.decide`, idempotency via cek status → 409 bila sudah diputuskan).
+
+### 2026-09-22 (sesi 13 — F5-02 RLS)
+
+- **R-051** — **F5-02 selesai (staged rollout)**: RLS + policy `tenant_isolation` di 40 tabel tenant.
+  Tabel anak tanpa `company_id` (ai_models, *_members, message_threads/reactions, task_dependencies,
+  agent_skills/tools/knowledge/mcp_access, knowledge_acl, mcp_tools) dilindungi via join parent.
+  Policy fail-closed: `current_setting('app.company_id', true)` NULL → 0 baris, bukan seluruh data.
+- **R-052** — **Role app masih superuser (BYPASSRLS)** sengaja dipertahankan agar runtime tidak berubah
+  selama BFF belum memakai `withTenant()` di semua path. Aktivasi penuh satu perintah:
+  `ALTER ROLE orvexa NOSUPERUSER NOBYPASSRLS`. Fail-closed diverifikasi dengan role probe non-superuser:
+  dengan GUC → 1 baris, tanpa GUC → 0 baris. GUC key implementasi: `app.company_id`
+  (dok §14 DATABASE_SCHEMA.md + §10 SECURITY.md disesuaikan).
+
+### 2026-09-22 (sesi 12 — F5-01 Permission Matrix)
+
+- **R-046** — **F5-01 selesai**: permission matrix dua lapis — RBAC human (`rbac.ts`, role → permission)
+  + ABAC agent (`lib/permissions.ts`): efek default per tool (**deny-by-default untuk tool sensitif**:
+  firewall/deploy/restart/database write → `approval_required`), override per agent via `agent_permissions`
+  dengan kondisi `room_types` / `max_risk_level` / `project_id`.
+- **R-047** — **Evaluator fail-closed & pure**: tool tak dikenal → `disabled`; kondisi yang tidak bisa
+  dievaluasi (room type tak diketahui) → `approval_required`; effect tak dikenal → `approval_required`.
+  13 test `node:test` (`npm run test -w apps/web`) mengunci perilaku ini.
+- **R-048** — **Eksekusi tool satu pintu**: `executeTool()` kini menerima `ToolPermissionContext`
+  (override rows + room type); `/api/internal/tools/execute` memuat override + tipe room dari DB sebelum
+  eksekusi; `approval_required` → HTTP 202 (checkpoint siap disambung F5-03). Worker sudah memeriksa
+  `permissions` dari payload konteks sejak F3 — tidak berubah.
+- **R-049** — **UI**: panel permission per tool di halaman Agents (Default / Selalu izinkan / Wajib approval /
+  Nonaktif) — disimpan sebagai override `agent_permissions` lewat PATCH `/api/v1/agents/:id` dengan audit log.
+- **R-050** — **Seed**: tool yang ditautkan ke agent infra kini juga mendapat baris `agent_permissions`
+  dengan efek mengikuti matrix default (bukan blind `allow`).
+
+### 2026-09-22 (sesi 11 — Menu UI Completion)
+
+- **R-041** — **5 menu placeholder jadi fungsional sebelum Fase 5**: Agents (CRUD + skill/tool/provider/budget),
+  AI Providers (API key terenkripsi AES-256-GCM, rotasi, masking last4 — memenuhi catatan handoff "simpan kredensial
+  lewat menu Providers"), Decisions (approve/reject), Documents (editor + versioning), Projects (API + UI baru).
+- **R-042** — **Konvensi halaman**: server component membaca DB langsung via Drizzle (pola `/tasks`), aksi mutasi
+  lewat client component ke `/api/v1/*` — tidak ada lagi fetch-self via `NEXT_PUBLIC_APP_URL` untuk menu baru.
+- **R-043** — **RBAC dilengkapi**: `team.create/update/delete` kini ada di PERMISSIONS + role ADMIN (sebelumnya
+  dipakai route teams tapi tidak terdaftar → type error). Route params `[id]` yang masih pola lama diseragamkan ke
+  `Promise<{...}>` sesuai kontrak Next.js 16.
+- **R-044** — **Dev via domain**: `allowedDevOrigins: ["originlabs.my.id"]` di `next.config.mjs` agar HMR websocket
+  tidak diblokir cross-origin saat akses dev server lewat Caddy.
+- **R-045** — **Polish UI menyeluruh**: semua halaman menu kini konsisten memakai design token Orvexa
+  (`text-fg`/`bg-surface`/`border-line`) alih-alih alias shadcn yang kontrasnya kurang di 5 tema; header halaman
+  seragam; form 2 kolom; context panel kanan (statistik/penjelasan) seperti dashboard. Halaman Members, Teams,
+  Skills, Themes berhenti fetch-self via `NEXT_PUBLIC_APP_URL` (rawan gagal via domain) dan membaca DB langsung;
+  Themes kini menampilkan preview swatch warna dari tokens.
 
 ### 2026-09-22 (sesi 10 — Fase 4 selesai)
 

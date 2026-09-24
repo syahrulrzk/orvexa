@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { apiError, apiOk, authenticate, guardPermission, readJson } from "@/lib/api";
 import { db } from "@/lib/db";
 import { activityLogs, agents, teamMembers, teams } from "@/lib/db/schema";
+import { newId } from "@/lib/ids";
 import { updateTeamSchema } from "../route";
 
 export const runtime = "nodejs";
@@ -20,12 +21,13 @@ async function teamOwned(id: string, companyId: string): Promise<boolean> {
 
 export async function GET(
   request: Request,
-  { params }: { params: { teamId: string } }
+  { params }: { params: Promise<{ teamId: string }> }
 ): Promise<NextResponse> {
   const auth = await authenticate();
   if (auth instanceof NextResponse) return auth;
 
-  if (!(await teamOwned(params.teamId, auth.company!.id))) {
+  const { teamId } = await params;
+  if (!(await teamOwned(teamId, auth.company!.id))) {
     return apiError("NOT_FOUND", "Team tidak ditemukan.", 404);
   }
 
@@ -38,7 +40,7 @@ export async function GET(
       updated_at: teams.updatedAt,
     })
     .from(teams)
-    .where(eq(teams.id, params.teamId))
+    .where(eq(teams.id, teamId))
     .limit(1);
 
   if (!team) {
@@ -57,19 +59,20 @@ export async function GET(
     })
     .from(teamMembers)
     .leftJoin(agents, eq(teamMembers.agentId, agents.id))
-    .where(eq(teamMembers.teamId, params.teamId));
+    .where(eq(teamMembers.teamId, teamId));
 
   return apiOk({ team: { ...team, members } });
 }
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { teamId: string } }
+  { params }: { params: Promise<{ teamId: string }> }
 ): Promise<NextResponse> {
   const auth = await authenticate();
   if (auth instanceof NextResponse) return auth;
 
-  if (!(await teamOwned(params.teamId, auth.company!.id))) {
+  const { teamId } = await params;
+  if (!(await teamOwned(teamId, auth.company!.id))) {
     return apiError("NOT_FOUND", "Team tidak ditemukan.", 404);
   }
 
@@ -89,7 +92,7 @@ export async function PATCH(
       description: data.description ?? undefined,
       updatedAt: new Date(),
     })
-    .where(eq(teams.id, params.teamId))
+    .where(eq(teams.id, teamId))
     .returning();
 
   await db.insert(activityLogs).values({
@@ -109,12 +112,13 @@ export async function PATCH(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { teamId: string } }
+  { params }: { params: Promise<{ teamId: string }> }
 ): Promise<NextResponse> {
   const auth = await authenticate();
   if (auth instanceof NextResponse) return auth;
 
-  if (!(await teamOwned(params.teamId, auth.company!.id))) {
+  const { teamId } = await params;
+  if (!(await teamOwned(teamId, auth.company!.id))) {
     return apiError("NOT_FOUND", "Team tidak ditemukan.", 404);
   }
 
@@ -124,7 +128,7 @@ export async function DELETE(
   const [row] = await db
     .update(teams)
     .set({ deletedAt: new Date() })
-    .where(eq(teams.id, params.teamId))
+    .where(eq(teams.id, teamId))
     .returning();
 
   await db.insert(activityLogs).values({

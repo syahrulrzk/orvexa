@@ -187,6 +187,23 @@ Tabel ai_credentials:
 - Audit setiap penggunaan & perubahan kredensial.
 ```
 
+### 5.2.1 Rotasi Master Key (F5-04 — terimplementasi)
+
+```text
+1. Ganti ORVEXA_MASTER_KEY di .env (base64 32-byte) → restart web + worker.
+2. POST /api/v1/credentials/rotate   (permission credential.manage)
+   → lib/keyring.ts: reencryptAllCredentials()
+   → tiap kredensial: decrypt (kunci lama) → encrypt (kunci baru) → key_version baru
+   → kredensial yang gagal didekripsi TIDAK disentuh (aman, bisa diulang)
+   → laporan: { total, reencrypted, failed, from_version, to_version, failures[] }
+3. Kunci lama boleh dibuang setelah failed = 0.
+```
+
+Masking UI: API hanya mengembalikan `last4` (4 digit akhir), ditampilkan `sk-••••ABCD`.
+Rotasi per-API-key dari UI Providers juga tersedia (menonaktifkan versi lama otomatis).
+
+```
+
 ### 5.3 Alur penggunaan kredensial
 
 ```text
@@ -368,8 +385,13 @@ frame-ancestors 'none';
 
 ## 10. Keamanan Database
 
-- **RLS aktif** di semua tabel ber-`company_id` (lihat [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) §14).
-- Role aplikasi **bukan** superuser; tidak bisa `BYPASSRLS`.
+- **RLS terpasang (F5-02)**: policy `tenant_isolation` fail-closed di 40 tabel tenant —
+  migrasi `0004_rls_company_isolation.sql`, key GUC `app.company_id`. Detail:
+  [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) §14.
+- **Staged rollout**: role `orvexa` saat ini masih superuser (BYPASSRLS) supaya runtime stabil;
+  enforcement penuh = `ALTER ROLE orvexa NOSUPERUSER NOBYPASSRLS` setelah semua query memakai
+  `withTenant()` (`src/lib/db/tenant.ts`). Tanpa GUC, role non-superuser melihat **0 baris**.
+- Role aplikasi **bukan** superuser setelah aktivasi; tidak bisa `BYPASSRLS`.
 - Koneksi DB hanya dari network internal; tidak pernah diekspos.
 - Backup terenkripsi (at-rest) + uji restore berkala.
 - Secret DB di env, bukan di repo.

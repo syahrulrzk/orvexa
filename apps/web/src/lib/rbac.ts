@@ -35,6 +35,9 @@ export const PERMISSIONS = [
   "database.write",
   "production.deploy",
   "member.invite",
+  "team.create",
+  "team.update",
+  "team.delete",
   "settings.manage",
 ] as const;
 
@@ -79,6 +82,9 @@ const ADMIN: readonly Permission[] = [
   "provider.configure",
   "credential.manage",
   "member.invite",
+  "team.create",
+  "team.update",
+  "team.delete",
   "settings.manage",
   // Aksi sensitif tetap butuh approval dari agent; admin boleh menyetujui.
   "server.restart",

@@ -18,7 +18,8 @@ export type AgentTriggerKind =
   | "task.assigned"
   | "schedule"
   | "manual"
-  | "delegation";
+  | "delegation"
+  | "approval.resume";
 
 export type AgentJob = {
   job_id: string;

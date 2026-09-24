@@ -2,6 +2,8 @@ import { and, eq, isNull } from "drizzle-orm";
 
 import { db } from "./db";
 import { agents, documents, messages, rooms, tasks } from "./db/schema";
+import { evaluatePermission } from "./permissions";
+import { requestApproval } from "./approvals";
 import { saveMemory, type MemoryScope } from "./memory";
 import { publishRoomEvent } from "./events";
 import { enqueueAgentJob } from "./jobs";
@@ -151,6 +153,18 @@ export type ToolResult = {
   result?: unknown;
   error?: string;
   requires_approval?: boolean;
+  /** F5-01: dari mana keputusan permission berasal. */
+  permission_source?: "default" | "agent_override";
+};
+
+/** Kondisi aksi agent untuk evaluasi ABAC (F5-01). */
+export type ToolPermissionContext = {
+  /** Override per agent dari tabel agent_permissions (kosong = pakai default). */
+  permissionRows?: { permission: string; effect: string; conditions?: unknown }[];
+  /** Tipe room tempat tool dipanggil (untuk kondisi room_types). */  
+  roomType?: string | null;
+  /** Project konteks (untuk kondisi project_id). */
+  projectId?: string | null;
 };
 
 const asString = (value: unknown): string | null =>
@@ -159,19 +173,44 @@ const asString = (value: unknown): string | null =>
 const MEMORY_SCOPES_VALID: readonly string[] = ["conversation", "project", "company", "agent"];
 
 /**
- * Eksekusi tool. `agent_permissions` diperiksa pemanggil (worker) lewat
- * `requires_approval`, sedangkan pembatasan tipe argumen dilakukan di sini.
+ * Eksekusi tool dengan pemeriksaan permission matrix (F5-01).
+ *
+ * Urutan keputusan:
+ *  1. Tool tak dikenal → ditolak.
+ *  2. Evaluasi ABAC (`evaluatePermission`): default matrix vs override
+ *     `agent_permissions`. Hasil `disabled` → ditolak; `approval_required` →
+ *     HTTP 202 ke worker (checkpoint approval, F5-03); `allow` → eksekusi.
  */
 export async function executeTool(
   key: string,
   args: Record<string, unknown>,
   ctx: ToolContext,
+  permission?: ToolPermissionContext,
 ): Promise<ToolResult> {
   const spec = getToolSpec(key);
   if (!spec) return { ok: false, key, error: `Tool "${key}" tidak dikenal.` };
 
-  if (spec.requires_approval) {
-    return { ok: false, key, requires_approval: true, error: "Tool ini butuh approval manusia." };
+  // --- F5-01: permission matrix (fail-closed) ---
+  const decision = evaluatePermission(key, permission?.permissionRows ?? [], {
+    roomType: permission?.roomType ?? null,
+    projectId: permission?.projectId ?? null,
+  });
+  if (decision.effect === "disabled") {
+    return { ok: false, key, permission_source: decision.source, error: "Tool ini dinonaktifkan oleh permission matrix." };
+  }
+  if (decision.effect === "approval_required" || spec.requires_approval) {
+    // F5-03: buat approval pending agar manusia bisa memutuskan; worker
+    // menerima HTTP 202 dan agent dilanjutkan setelah keputusan (resume).
+    await requestApproval({
+      companyId: ctx.companyId,
+      agentId: ctx.agentId,
+      runId: ctx.runId,
+      roomId: ctx.roomId,
+      toolKey: key,
+      args,
+      reason: decision.source === "agent_override" ? `Tool ${key} (override agent) butuh approval.` : undefined,
+    });
+    return { ok: false, key, requires_approval: true, permission_source: decision.source, error: "Tool ini butuh approval manusia." };
   }
 
   try {
@@ -424,15 +463,16 @@ export async function executeTool(
   }
 }
 
-/** Tool yang benar-benar boleh dipakai agent: builtin ∩ agent_tools (bila diatur). */
+/** Tool yang benar-benar boleh dipakai agent: builtin ∩ agent_tools (bila diatur) ∩ tidak disabled. */
 export async function resolveAgentTools(
   agentId: string,
   enabledKeys: string[] | null,
+  permissionRows: { permission: string; effect: string; conditions?: unknown }[] = [],
 ): Promise<ToolSpec[]> {
   void agentId;
   return BUILTIN_TOOLS.filter((t) => {
-    if (t.requires_approval) return false;
-    if (!enabledKeys) return true;
-    return enabledKeys.includes(t.key);
+    if (!enabledKeys) return false;
+    if (!enabledKeys.includes(t.key)) return false;
+    return evaluatePermission(t.key, permissionRows).effect !== "disabled";
   });
 }

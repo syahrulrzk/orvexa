@@ -21,12 +21,13 @@ async function skillOwned(id: string, companyId: string): Promise<boolean> {
 
 export async function GET(
   request: Request,
-  { params }: { params: { skillId: string } }
+  { params }: { params: Promise<{ skillId: string }> }
 ): Promise<NextResponse> {
   const auth = await authenticate();
   if (auth instanceof NextResponse) return auth;
 
-  if (!(await skillOwned(params.skillId, auth.company!.id))) {
+  const { skillId } = await params;
+  if (!(await skillOwned(skillId, auth.company!.id))) {
     return apiError("NOT_FOUND", "Skill tidak ditemukan.", 404);
   }
 
@@ -40,7 +41,7 @@ export async function GET(
       created_at: skills.createdAt,
     })
     .from(skills)
-    .where(eq(skills.id, params.skillId))
+    .where(eq(skills.id, skillId))
     .limit(1);
 
   if (!skill) {
@@ -53,19 +54,20 @@ export async function GET(
       agent_id: agentSkills.agentId,
     })
     .from(agentSkills)
-    .where(eq(agentSkills.skillId, params.skillId));
+    .where(eq(agentSkills.skillId, skillId));
 
   return apiOk({ skill: { ...skill, agents: agents.map((a) => a.agent_id) } });
 }
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { skillId: string } }
+  { params }: { params: Promise<{ skillId: string }> }
 ): Promise<NextResponse> {
   const auth = await authenticate();
   if (auth instanceof NextResponse) return auth;
 
-  if (!(await skillOwned(params.skillId, auth.company!.id))) {
+  const { skillId } = await params;
+  if (!(await skillOwned(skillId, auth.company!.id))) {
     return apiError("NOT_FOUND", "Skill tidak ditemukan.", 404);
   }
 
@@ -85,7 +87,7 @@ export async function PATCH(
       description: data.description ?? undefined,
       category: data.category ?? undefined,
     })
-    .where(eq(skills.id, params.skillId))
+    .where(eq(skills.id, skillId))
     .returning();
 
   await db.insert(activityLogs).values({
@@ -105,12 +107,13 @@ export async function PATCH(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { skillId: string } }
+  { params }: { params: Promise<{ skillId: string }> }
 ): Promise<NextResponse> {
   const auth = await authenticate();
   if (auth instanceof NextResponse) return auth;
 
-  if (!(await skillOwned(params.skillId, auth.company!.id))) {
+  const { skillId } = await params;
+  if (!(await skillOwned(skillId, auth.company!.id))) {
     return apiError("NOT_FOUND", "Skill tidak ditemukan.", 404);
   }
 
@@ -119,7 +122,7 @@ export async function DELETE(
 
   const [row] = await db
     .delete(skills)
-    .where(eq(skills.id, params.skillId))
+    .where(eq(skills.id, skillId))
     .returning();
 
   await db.insert(activityLogs).values({

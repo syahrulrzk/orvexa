@@ -944,22 +944,48 @@ CREATE TABLE user_preferences (
 
 ## 14. Row-Level Security (Multi-Tenancy)
 
+> **Status (F5-02):** RLS + policy `tenant_isolation` sudah terpasang di **40 tabel tenant**
+> (migrasi `0004_rls_company_isolation.sql`). Tabel ber-`company_id` memakai policy seragam;
+> tabel anak tanpa `company_id` (ai_models, team_members, room_members, message_threads,
+> message_reactions, project_members, task_dependencies, agent_skills/tools/knowledge/mcp_access,
+> knowledge_acl, mcp_tools) dilindungi via **join ke parent**.
+>
+> Key GUC yang dipakai implementasi: **`app.company_id`** (bukan `app.current_company_id`).
+
 Isolasi tenant ditegakkan di level database. Aplikasi harus men-set variabel sesi sebelum query:
 
 ```sql
--- Setiap kali ada koneksi untuk user tertentu:
-SET LOCAL app.current_user_id = 'usr_...';
-SET LOCAL app.current_company_id = 'cmp_...';
+-- Setiap transaksi request (lokal transaksi — otomatis reset):
+select set_config('app.company_id', 'cmp_...', true);
 
--- Contoh RLS pada tabel agents
-ALTER TABLE agents ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY agents_tenant_isolation ON agents
-  USING (company_id = current_setting('app.current_company_id', true))
-  WITH CHECK (company_id = current_setting('app.current_company_id', true));
+-- Contoh policy (sudah dipasang migrasi 0004, pola seragam):
+CREATE POLICY tenant_isolation ON agents
+  FOR ALL
+  USING (company_id = nullif(current_setting('app.company_id', true), ''))
+  WITH CHECK (company_id = nullif(current_setting('app.company_id', true), ''));
 ```
 
-**Aturan:** semua tabel yang punya `company_id` wajib mengaktifkan RLS. Role aplikasi (`orvexa_app`) **bukan** superuser, dan RLS **tidak** di-bypass kecuali oleh role migrasi/admin khusus.
+**Fail-closed:** `current_setting(..., true)` mengembalikan NULL saat belum diset → policy NULL →
+**0 baris**, bukan seluruh data. Statement tanpa context aman secara default.
+
+**Helper di aplikasi:** `withTenant(companyId, (tx) => ...)` di `src/lib/db/tenant.ts` —
+transaksi + set GUC lokal untuk setiap statement di dalamnya.
+
+**Staged rollout (penting):** role aplikasi saat ini masih superuser `orvexa` (BYPASSRLS) agar
+perilaku runtime tidak berubah selama BFF belum sepenuhnya memakai `withTenant`. Aktivasi penuh
+setelah semua query path di-wire:
+
+```sql
+ALTER ROLE orvexa NOSUPERUSER NOBYPASSRLS;
+```
+
+Verifikasi gagal-aman sudah diuji: role non-superuser **dengan** context melihat datanya, **tanpa**
+context melihat 0 baris.
+
+**Aturan:** semua tabel baru yang punya `company_id` wajib enable RLS + policy `tenant_isolation`
+(migrasi 0004 menyertakan verifikasi otomatis yang melempar error bila ada tabel terlewat).
+Role aplikasi **bukan** superuser setelah aktivasi, dan RLS **tidak** di-bypass kecuali oleh role
+migrasi/admin khusus.
 
 > Detail kebijakan keamanan ada di [SECURITY.md](./SECURITY.md).
 

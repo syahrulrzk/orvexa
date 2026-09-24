@@ -21,12 +21,13 @@ async function themeOwned(id: string, companyId: string): Promise<boolean> {
 
 export async function GET(
   request: Request,
-  { params }: { params: { themeId: string } }
+  { params }: { params: Promise<{ themeId: string }> }
 ): Promise<NextResponse> {
   const auth = await authenticate();
   if (auth instanceof NextResponse) return auth;
 
-  if (!(await themeOwned(params.themeId, auth.company!.id))) {
+  const { themeId } = await params;
+  if (!(await themeOwned(themeId, auth.company!.id))) {
     return apiError("NOT_FOUND", "Theme tidak ditemukan.", 404);
   }
 
@@ -39,7 +40,7 @@ export async function GET(
       is_builtin: themes.isBuiltin,
     })
     .from(themes)
-    .where(eq(themes.id, params.themeId))
+    .where(eq(themes.id, themeId))
     .limit(1);
 
   if (!theme) {
@@ -51,12 +52,13 @@ export async function GET(
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { themeId: string } }
+  { params }: { params: Promise<{ themeId: string }> }
 ): Promise<NextResponse> {
   const auth = await authenticate();
   if (auth instanceof NextResponse) return auth;
 
-  if (!(await themeOwned(params.themeId, auth.company!.id))) {
+  const { themeId } = await params;
+  if (!(await themeOwned(themeId, auth.company!.id))) {
     return apiError("NOT_FOUND", "Theme tidak ditemukan.", 404);
   }
 
@@ -76,7 +78,7 @@ export async function PATCH(
       name: data.name ?? undefined,
       tokens: data.tokens ?? undefined,
     })
-    .where(eq(themes.id, params.themeId))
+    .where(eq(themes.id, themeId))
     .returning();
 
   await db.insert(activityLogs).values({
@@ -96,12 +98,13 @@ export async function PATCH(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { themeId: string } }
+  { params }: { params: Promise<{ themeId: string }> }
 ): Promise<NextResponse> {
   const auth = await authenticate();
   if (auth instanceof NextResponse) return auth;
 
-  if (!(await themeOwned(params.themeId, auth.company!.id))) {
+  const { themeId } = await params;
+  if (!(await themeOwned(themeId, auth.company!.id))) {
     return apiError("NOT_FOUND", "Theme tidak ditemukan.", 404);
   }
 
@@ -110,7 +113,7 @@ export async function DELETE(
 
   const [row] = await db
     .delete(themes)
-    .where(eq(themes.id, params.themeId))
+    .where(eq(themes.id, themeId))
     .returning();
 
   await db.insert(activityLogs).values({

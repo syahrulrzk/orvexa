@@ -15,7 +15,7 @@ const createTeamSchema = z.object({
   description: z.string().optional(),
 });
 
-const updateTeamSchema = z.object({
+export const updateTeamSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().optional(),
 });
