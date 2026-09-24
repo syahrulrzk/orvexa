@@ -105,7 +105,9 @@ class Orchestrator:
             strategy = DefaultStrategy()
         self._strategy = strategy
 
-    async def handle(self, job: Job) -> None:
+    async def handle(self, job: Job) -> bool:
+        """Jalankan satu job. Return True bila sukses; False bila gagal
+        (dipakai main.py untuk keputusan retry/dead-letter, OQ-09)."""
         log_extra = {
             "job_id": job.job_id,
             "agent_id": job.agent_id,
@@ -128,7 +130,7 @@ class Orchestrator:
             await self.publisher.run_finished(
                 job.room_id, job.agent_id, "", "failed", error="context_load_failed"
             )
-            return
+            return False
 
         agent_budget = context.get("budget") or {}
         run_id = ""
@@ -178,17 +180,21 @@ class Orchestrator:
                 "run selesai",
                 extra={**log_extra, "run_id": run_id, **guard.snapshot()},
             )
+            return True
         except BudgetExceeded as exc:
             logger.warning("budget habis: %s", exc, extra=log_extra)
             await self._close_run_failed(job, run_id, str(exc), status="cancelled", guard_locals=locals())
+            return False  # budget habis = gagal non-retryable (dihitung delivery)
         except TimeoutError:
             logger.error("run timeout (%ss)", self.timeout_seconds, extra=log_extra)
             await self._close_run_failed(
                 job, run_id, f"Timeout setelah {self.timeout_seconds}s", guard_locals=locals()
             )
+            return False
         except Exception as exc:  # noqa: BLE001 - jangan biarkan worker mati
             logger.exception("run gagal", extra=log_extra)
             await self._close_run_failed(job, run_id, str(exc), guard_locals=locals())
+            return False
         finally:
             try:
                 await self.api.set_agent_status(job.agent_id, "idle", room_id=job.room_id, run_id=run_id)

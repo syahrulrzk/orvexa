@@ -33,6 +33,10 @@ class Settings:
     agent_max_steps: int
     agent_max_tokens: int
     agent_timeout_seconds: int
+    # OQ-09 — retry berjenjang + dead-letter
+    max_deliveries: int
+    reclaim_idle_ms: int
+    dead_stream: str
 
     @staticmethod
     def load() -> "Settings":
@@ -55,6 +59,12 @@ class Settings:
             agent_max_steps=int(os.environ.get("AGENT_MAX_STEPS", "8")),
             agent_max_tokens=int(os.environ.get("AGENT_MAX_TOKENS", "12000")),
             agent_timeout_seconds=int(os.environ.get("AGENT_TIMEOUT_SECONDS", "180")),
+            # OQ-09: job yang gagal di-retry lewat PEL (pending entry list) —
+            # XAUTOCLAIM mengambil entry yang terlantar lama dari consumer
+            # mati/gagal; setelah MAX_DELIVERIES kali gagal → dead-letter.
+            max_deliveries=int(os.environ.get("WORKER_MAX_DELIVERIES", "3")),
+            reclaim_idle_ms=int(os.environ.get("WORKER_RECLAIM_IDLE_MS", "60000")),
+            dead_stream=os.environ.get("WORKER_DEAD_STREAM", "agent.jobs.dead"),
         )
 
 

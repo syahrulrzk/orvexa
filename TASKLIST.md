@@ -629,6 +629,23 @@ visual state of the agents inside the Virtual Office.
 
 > Catat perubahan penting, keputusan yang direvisi, atau fitur baru. Terbaru di atas.
 
+### 2026-09-24 (sesi 26 — OQ-09 retry + dead-letter)
+
+- **R-093** — **OQ-09 selesai — utang keputusan terakhir lunas**: sebelumnya
+  job gagal di-ACK selalu (hilang diam-diam, diakui komen di `main.py`). Kini:
+  job gagal **tetap di PEL** → `_reclaim_stale()` memakai `XAUTOCLAIM` (Redis
+  ≥ 6.2) mengambil entry terlantar (consumer mati/gagal, idle > 60 dtk) →
+  di-retry; setelah `WORKER_MAX_DELIVERIES` (default 3) gagal → dipindah ke
+  stream **`agent.jobs.dead`** (+ `source_id`, `deliveries`, `failed_at`) dan
+  run terkait ditutup `failed/dead_lettered` (best-effort).
+- **R-094** — `Orchestrator.handle()` kini mengembalikan bool sukses; hanya
+  job sukses di-ACK. Payload rusak (tanpa `data`) langsung di-ACK (tidak
+  berguna di-retry). Graceful degradation: Redis < 6.2 tanpa `XAUTOCLAIM` →
+  fallback perilaku lama (log debug), tidak crash.
+- **R-095** — Terbukti dengan **Redis asli** (`scripts/dev/test-retry-deadletter.py`,
+  orchestrator tiruan): 4 skenario lulus — sukses→ACK kosong PEL; gagal→tetap
+  PEL; reclaim→retry sukses→ACK; gagal 4x→dead-letter+ACK stream utama.
+
 ### 2026-09-24 (sesi 25 — Phase 10 Virtual Office)
 
 - **R-089** — **Virtual Office selesai (MVP fungsional)**: denah isometric CSS
@@ -976,7 +993,7 @@ visual state of the agents inside the Virtual Office.
 | ~~OQ-04~~ | Provider default untuk seed agent | ✅ **Dari env** (`OPENAI_COMPATIBLE_API_KEY` dst.) → dienkripsi ke `ai_credentials` saat seed; agent lain bisa diatur dari UI Providers |
 | ~~OQ-07~~ | UI primitives | ✅ **shadcn/ui** (di-mapping ke token Orvexa) |
 | ~~OQ-08~~ | Orkestrasi worker: Redis Streams consumer group vs arq/Celery | ✅ **Redis Streams** (dipakai sejak F1, sudah terbukti di F3) |
-| OQ-09 | Retry berjenjang + dead-letter untuk job gagal | 🟡 Usul: `XPENDING` + retry counter + stream `agent.jobs.dead` (Fase 5) |
+| ~~OQ-09~~ | Retry berjenjang + dead-letter untuk job gagal | ✅ **Diterapkan (2026-09-24)**: job gagal tetap di PEL → `XAUTOCLAIM` reclaim setelah idle 60 dtk → retry s.d. 3 delivery → dead-letter `agent.jobs.dead` (+ run ditutup) |
 
 ---
 
@@ -1033,8 +1050,8 @@ service. Untuk menjalankan satu kali saja (debug/memproses antrean lalu berhenti
 docker compose run --rm --no-deps -T worker
 ```
 
-Sisa keputusan terbuka yang relevan: **OQ-03** (object storage) dan **OQ-09**
-(retry + dead-letter) — keduanya menyentuh Fase 5/6.
+Sisa keputusan terbuka yang relevan: **OQ-03** (object storage) — satu-satunya;
+OQ-09 (retry + dead-letter) sudah selesai 2026-09-24.
 
 **Catatan penting:** `.env` sudah dibuat dengan secret ter-generate (gitignored). Jangan commit.
 
