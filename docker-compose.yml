@@ -181,6 +181,62 @@ services:
     ports:
       - "9105:9105"
 
+  # UniFi Controller (cookie SESSION + CSRF) — F6-04
+  mcp-unifi:
+    build:
+      context: ./mcp-servers
+      dockerfile: Dockerfile
+    container_name: orvexa-mcp-unifi
+    restart: unless-stopped
+    profiles: ["mcp"]
+    environment:
+      TZ: Asia/Jakarta
+      MCP_PORT: 9106
+      UNIFI_URL: ${UNIFI_URL:-https://localhost:8443}
+      UNIFI_USER: ${UNIFI_USER:-}
+      UNIFI_PASS: ${UNIFI_PASS:-}
+      UNIFI_TLS_VERIFY: ${UNIFI_TLS_VERIFY:-false}
+      MCP_BEARER_TOKEN: ${MCP_UNIFI_BEARER:-}
+    ports:
+      - "9106:9106"
+
+  # MikroTik RouterOS REST API (Basic auth) — F6-04
+  mcp-mikrotik:
+    build:
+      context: ./mcp-servers
+      dockerfile: Dockerfile
+    container_name: orvexa-mcp-mikrotik
+    restart: unless-stopped
+    profiles: ["mcp"]
+    environment:
+      TZ: Asia/Jakarta
+      MCP_PORT: 9107
+      MIKROTIK_URL: ${MIKROTIK_URL:-https://localhost:443}
+      MIKROTIK_USER: ${MIKROTIK_USER:-admin}
+      MIKROTIK_PASS: ${MIKROTIK_PASS:-}
+      MIKROTIK_TLS_VERIFY: ${MIKROTIK_TLS_VERIFY:-false}
+      MCP_BEARER_TOKEN: ${MCP_MIKROTIK_BEARER:-}
+    ports:
+      - "9107:9107"
+
+  # FortiGate REST API v2 (token) — F6-04 ("Firewall" di PRD)
+  mcp-fortigate:
+    build:
+      context: ./mcp-servers
+      dockerfile: Dockerfile
+    container_name: orvexa-mcp-fortigate
+    restart: unless-stopped
+    profiles: ["mcp"]
+    environment:
+      TZ: Asia/Jakarta
+      MCP_PORT: 9108
+      FORTIGATE_URL: ${FORTIGATE_URL:-https://localhost:8443}
+      FORTIGATE_TOKEN: ${FORTIGATE_TOKEN:-}
+      FORTIGATE_TLS_VERIFY: ${FORTIGATE_TLS_VERIFY:-false}
+      MCP_BEARER_TOKEN: ${MCP_FORTIGATE_BEARER:-}
+    ports:
+      - "9108:9108"
+
   # ============================================================
   # Reverse proxy + HTTPS otomatis (opsional)
   #   docker compose --profile proxy up -d

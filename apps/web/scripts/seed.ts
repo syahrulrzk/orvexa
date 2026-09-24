@@ -846,6 +846,133 @@ async function main(): Promise<void> {
     console.log("– MCP kubernetes dilewati (set MCP_KUBERNETES_URL untuk mengaktifkan)");
   }
 
+  const mcpUnifiUrl = process.env.MCP_UNIFI_URL?.trim();
+  if (mcpUnifiUrl) {
+    await upsertMcpServer(
+      "unifi",
+      mcpUnifiUrl,
+      [
+        {
+          toolName: "sites",
+          description: "Daftar site UniFi Controller.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "devices",
+          description: "Daftar device UniFi (AP/switch/gateway) + status per site.",
+          inputSchema: {
+            type: "object",
+            properties: { site: { type: "string" } },
+            required: ["site"],
+            additionalProperties: false,
+          },
+        },
+        {
+          toolName: "clients",
+          description: "Daftar client aktif (wifi/wired) per site.",
+          inputSchema: {
+            type: "object",
+            properties: { site: { type: "string" } },
+            required: ["site"],
+            additionalProperties: false,
+          },
+        },
+        {
+          toolName: "site_health",
+          description: "Health sub-sistem UniFi (wan/lan/wlan/vpn) per site.",
+          inputSchema: {
+            type: "object",
+            properties: { site: { type: "string" } },
+            required: ["site"],
+            additionalProperties: false,
+          },
+        },
+      ],
+      process.env.MCP_UNIFI_BEARER?.trim() || undefined,
+    );
+    console.log(`✓ MCP unifi server (http: ${mcpUnifiUrl}) + 4 tools + grant NOC`);
+  } else {
+    console.log("– MCP unifi dilewati (set MCP_UNIFI_URL untuk mengaktifkan)");
+  }
+
+  const mcpMikrotikUrl = process.env.MCP_MIKROTIK_URL?.trim();
+  if (mcpMikrotikUrl) {
+    await upsertMcpServer(
+      "mikrotik",
+      mcpMikrotikUrl,
+      [
+        {
+          toolName: "system_resource",
+          description: "Resource RouterOS: CPU, memori, uptime, versi.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "interfaces",
+          description: "Daftar interface MikroTik + counter traffic.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "routes",
+          description: "Tabel routing IP (aktif/nonaktif).",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "dhcp_leases",
+          description: "Lease DHCP server (status bound).",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "wireless",
+          description: "Registrasi wireless client (signal, rate, uptime).",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+      ],
+      process.env.MCP_MIKROTIK_BEARER?.trim() || undefined,
+    );
+    console.log(`✓ MCP mikrotik server (http: ${mcpMikrotikUrl}) + 5 tools + grant NOC`);
+  } else {
+    console.log("– MCP mikrotik dilewati (set MCP_MIKROTIK_URL untuk mengaktifkan)");
+  }
+
+  const mcpFortigateUrl = process.env.MCP_FORTIGATE_URL?.trim();
+  if (mcpFortigateUrl) {
+    await upsertMcpServer(
+      "fortigate",
+      mcpFortigateUrl,
+      [
+        {
+          toolName: "system_status",
+          description: "Status FortiGate: firmware, serial, uptime.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "system_performance",
+          description: "Performa FortiGate: CPU & memori (1 jam terakhir).",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "firewall_policies",
+          description: "Daftar policy firewall + hit counter.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "firewall_addresses",
+          description: "Daftar objek address firewall.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "interfaces",
+          description: "Daftar interface FortiGate + status link.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+      ],
+      process.env.MCP_FORTIGATE_BEARER?.trim() || undefined,
+    );
+    console.log(`✓ MCP fortigate server (http: ${mcpFortigateUrl}) + 5 tools + grant NOC`);
+  } else {
+    console.log("– MCP fortigate dilewati (set MCP_FORTIGATE_URL untuk mengaktifkan)");
+  }
+
   console.log("\nSeed selesai. Login dengan lead@orvexa.dev / orvexa12345");
 
   await pgClient.end();

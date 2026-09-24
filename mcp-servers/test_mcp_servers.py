@@ -241,6 +241,113 @@ class TestKubernetesTools(unittest.TestCase):
         self.assertEqual(names, kit_names)
 
 
+class TestUnifiTools(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.mod = _load("unifi_server_test", "unifi_server.py")
+        self.mod._COOKIE_TS = 0.0
+        self.mod._CLIENT = None
+
+    async def test_sites_shape(self) -> None:
+        login = FakeResponse(200, {}, text="{}")
+        sites = FakeResponse(200, {"data": [{"name": "default", "desc": "Default", "_id": "s1"}]})
+        async def fake_post(url, **kw):
+            return login
+        async def fake_get(url, **kw):
+            return sites
+        with mock.patch.object(self.mod.httpx, "AsyncClient") as mc:
+            client = mc.return_value
+            client.post = fake_post
+            client.get = fake_get
+            client.cookies = {"SESSION": "x"}
+            out = await self.mod.tool_sites({})
+        self.assertEqual(out["count"], 1)
+        self.assertEqual(out["sites"][0]["name"], "default")
+
+    async def test_devices_requires_site(self) -> None:
+        with self.assertRaises(McpToolError):
+            await self.mod.tool_devices({})
+
+    def test_seed_catalog_matches_handlers(self) -> None:
+        names = {s["tool_name"] for s in self.mod.SEED_TOOLS}
+        self.assertEqual(names, set(self.mod.HANDLERS.keys()))
+        kit_names = {t.name for t in self.mod.kit.tools}
+        self.assertEqual(names, kit_names)
+
+
+class TestMikrotikTools(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mod = _load("mikrotik_server_test", "mikrotik_server.py")
+
+    def test_system_resource_shape(self) -> None:
+        fake = FakeResponse(200, [{
+            "version": "7.14", "board-name": "RB5009", "cpu-load": "12",
+            "free-memory": str(2_000_000_000), "total-memory": str(4_000_000_000),
+            "uptime": "3d4h", "cpu-count": "4",
+        }])
+        with mock.patch.object(self.mod.httpx, "get", return_value=fake):
+            out = self.mod.tool_system_resource({})
+        self.assertEqual(out["version"], "7.14")
+        self.assertEqual(out["free_memory_mb"], 2000.0)
+
+    def test_routes_active_count(self) -> None:
+        fake = FakeResponse(200, [
+            {"dst-address": "0.0.0.0/0", "gateway": "10.0.0.1", "distance": "1", "active": "true"},
+            {"dst-address": "192.168.0.0/16", "gateway": "", "active": "false"},
+        ])
+        with mock.patch.object(self.mod.httpx, "get", return_value=fake):
+            out = self.mod.tool_routes({})
+        self.assertEqual(out["count"], 2)
+        self.assertEqual(out["active_count"], 1)
+
+    def test_upstream_error_maps_to_tool_error(self) -> None:
+        import httpx as _httpx
+        with mock.patch.object(self.mod.httpx, "get", side_effect=_httpx.ConnectError("refused")):
+            with self.assertRaises(McpToolError):
+                self.mod.tool_interfaces({})
+
+    def test_seed_catalog_matches_handlers(self) -> None:
+        names = {s["tool_name"] for s in self.mod.SEED_TOOLS}
+        self.assertEqual(names, set(self.mod.HANDLERS.keys()))
+        kit_names = {t.name for t in self.mod.kit.tools}
+        self.assertEqual(names, kit_names)
+
+
+class TestFortigateTools(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mod = _load("fortigate_server_test", "fortigate_server.py")
+
+    def test_missing_token_raises(self) -> None:
+        self.mod.FORTIGATE_TOKEN = ""
+        with self.assertRaises(McpToolError):
+            self.mod.tool_system_status({})
+
+    def test_policies_shape(self) -> None:
+        self.mod.FORTIGATE_TOKEN = "tok"
+        fake = FakeResponse(200, {"results": [
+            {"policyid": 1, "name": "allow-lan", "srcintf": [{"name": "lan"}],
+             "dstintf": [{"name": "wan"}], "action": "accept", "status": "enable", "hit_count": 42},
+        ]})
+        with mock.patch.object(self.mod.httpx, "get", return_value=fake) as m:
+            out = self.mod.tool_firewall_policies({})
+        self.assertEqual(out["count"], 1)
+        self.assertEqual(out["policies"][0]["hit_count"], 42)
+        self.assertIn("Bearer tok", m.call_args.kwargs["headers"]["Authorization"])
+
+    def test_interfaces_dict_results_flattened(self) -> None:
+        self.mod.FORTIGATE_TOKEN = "tok"
+        fake = FakeResponse(200, {"results": {"wan1": {"id": "wan1", "ip": "1.2.3.4", "link": True}}})
+        with mock.patch.object(self.mod.httpx, "get", return_value=fake):
+            out = self.mod.tool_interfaces({})
+        self.assertEqual(out["count"], 1)
+        self.assertEqual(out["interfaces"][0]["name"], "wan1")
+
+    def test_seed_catalog_matches_handlers(self) -> None:
+        names = {s["tool_name"] for s in self.mod.SEED_TOOLS}
+        self.assertEqual(names, set(self.mod.HANDLERS.keys()))
+        kit_names = {t.name for t in self.mod.kit.tools}
+        self.assertEqual(names, kit_names)
+
+
 class TestGrafanaTools(unittest.TestCase):
     def setUp(self) -> None:
         self.mod = _load("grafana_server_test", "grafana_server.py")

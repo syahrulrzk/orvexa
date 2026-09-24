@@ -38,7 +38,7 @@
 | 3 | AI Infrastructure Department | 🟢 Selesai | 9/9 |
 | 4 | Agent Intelligence | 🟢 Selesai | 7/7 |
 | 5 | Governance | 🟢 Selesai | 7/7 |
-| 6 | Integrations & MCP | 🟡 Berjalan | 3/7 |
+| 6 | Integrations & MCP | 🟡 Berjalan | 4/7 |
 
 **Legenda status fase:** 🟢 Selesai · 🟡 Berjalan · ⚪ Belum mulai · 🔴 Blocked
 
@@ -347,7 +347,19 @@ tools.ts: +agent.delegate, +memory.save, +kb.search
       `MCP_DOCKER_URL` / `MCP_KUBERNETES_URL` → tools + grant NOC otomatis.
       Test: 28 unittest (mock httpx/socket/subprocess; dechunker, JWT retry,
       namespace injection) + smoke e2e 5 server vs MCP client worker.
-- [ ] **F6-04** MCP server: UniFi, MikroTik, Firewall
+- [x] **F6-04** MCP server: UniFi, MikroTik, Firewall
+      — tiga server MCP **read-only** tambahan di kit `mcp-servers/`:
+      `unifi_server.py` (sites, devices, clients, site_health — login cookie
+      SESSION, otomatis pilih `/api/login` self-hosted vs `/api/auth/login`
+      UniFi OS), `mikrotik_server.py` (system_resource, interfaces, routes,
+      dhcp_leases, wireless — RouterOS REST API ≥ 7.1, HTTP Basic), dan
+      `fortigate_server.py` (system_status, system_performance,
+      firewall_policies + hit counter, firewall_addresses, interfaces —
+      REST API v2 dengan API token; mewakili "Firewall" di PRD).
+      Compose `--profile mcp` (9106/9107/9108), seed `MCP_UNIFI_URL` /
+      `MCP_MIKROTIK_URL` / `MCP_FORTIGATE_URL` → tools + grant NOC otomatis.
+      Kit `common.py` kini mendukung handler async (await di task terpisah).
+      Test: 39 unittest + smoke e2e 8 server vs MCP client worker.
 - [ ] **F6-05** Integrasi n8n
 - [ ] **F6-06** Tool sensitif wajib approval
 - [ ] **F6-07** Notifikasi keluar (email/Slack/Telegram)
@@ -549,6 +561,22 @@ visual state of the agents inside the Virtual Office.
 ## 11. Revision Log
 
 > Catat perubahan penting, keputusan yang direvisi, atau fitur baru. Terbaru di atas.
+
+### 2026-09-24 (sesi 23 — F6-04 MCP server UniFi, MikroTik, FortiGate)
+
+- **R-082** — **F6-04 selesai**: tiga server MCP jaringan/firewall read-only —
+  UniFi (4 tool, cookie SESSION dengan fallback endpoint login UniFi OS),
+  MikroTik (5 tool via RouterOS REST, Basic auth), FortiGate (5 tool via
+  REST API v2 + API token; implementasi konkret "Firewall" di PRD yang
+  selama ini hanya matrix permission).
+- **R-083** — **Kit `common.py` kini mendukung handler async**: handler
+  coroutine di-`asyncio.run()` di thread request masing-masing sehingga
+  ThreadingHTTPServer tetap responsif — dipakai UniFi yang perlu login
+  cookie dua endpoint. Ditemukan saat smoke (isError async tidak tertangkap
+  → tool membalas ok palsu); sekarang teruji oleh smoke e2e 8 server.
+- **R-084** — Kredensial perangkat (UNIFI/MIKROTIK/FORTIGATE) hanya di env
+  service, tidak pernah dikirim ke LLM; bearer inline server tetap opsional
+  via `MCP_*_BEARER` (dienkripsi saat seed).
 
 ### 2026-09-24 (sesi 22 — F6-03 MCP server Wazuh, Docker, Kubernetes)
 

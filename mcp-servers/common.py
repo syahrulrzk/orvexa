@@ -16,6 +16,7 @@ memanggil `serve()`.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -154,6 +155,10 @@ def make_handler(kit: McpServerKit, bearer_token: str | None) -> type[BaseHTTPRe
                     return
                 try:
                     value = tool.handler(args if isinstance(args, dict) else {})
+                    # Handler coroutine (async) di-await di task terpisah agar
+                    # ThreadingHTTPServer tetap responsif.
+                    if asyncio.iscoroutine(value):
+                        value = asyncio.run(value)
                     self._send(jsonrpc_result(request_id, _tool_ok(value)))
                 except McpToolError as exc:
                     self._send(jsonrpc_result(request_id, _tool_err(str(exc))))

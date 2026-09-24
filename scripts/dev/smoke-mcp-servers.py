@@ -129,6 +129,44 @@ async def main() -> None:
             assert not kcall.ok, "kubectl hilang seharusnya isError"
             print(f"✓ kubernetes tools/list → {len(ktools)} tools; call tanpa kubectl → isError rapi")
             await kclient.close()
+
+            # --- 7. F6-04: unifi / mikrotik / fortigate (upstream mati → isError) ---
+            unifi = spawn(os.path.join(MCP_DIR, "unifi_server.py"), 9106, {"MCP_PORT": "9106", "UNIFI_URL": "http://127.0.0.1:18443"})
+            mikrotik = spawn(os.path.join(MCP_DIR, "mikrotik_server.py"), 9107, {"MCP_PORT": "9107", "MIKROTIK_URL": "http://127.0.0.1:1443"})
+            fortigate = spawn(os.path.join(MCP_DIR, "fortigate_server.py"), 9108, {"MCP_PORT": "9108", "FORTIGATE_URL": "http://127.0.0.1:18443", "FORTIGATE_TOKEN": "tok"})
+            try:
+                uclient = McpClient(McpServerConfig(transport="http", endpoint="http://127.0.0.1:9106/mcp", timeout_seconds=5.0))
+                utools = await uclient.list_tools()
+                assert sorted(t["name"] for t in utools) == ["clients", "devices", "site_health", "sites"]
+                ucall = await uclient.call_tool("sites", {})
+                assert not ucall.ok, "unifi down seharusnya isError"
+                print(f"✓ unifi tools/list → {len(utools)} tools; call saat down → isError rapi")
+                await uclient.close()
+
+                mclient = McpClient(McpServerConfig(transport="http", endpoint="http://127.0.0.1:9107/mcp", timeout_seconds=5.0))
+                mtools = await mclient.list_tools()
+                assert sorted(t["name"] for t in mtools) == ["dhcp_leases", "interfaces", "routes", "system_resource", "wireless"]
+                mcall = await mclient.call_tool("system_resource", {})
+                assert not mcall.ok, "routeros down seharusnya isError"
+                print(f"✓ mikrotik tools/list → {len(mtools)} tools; call saat down → isError rapi")
+                await mclient.close()
+
+                fclient = McpClient(McpServerConfig(transport="http", endpoint="http://127.0.0.1:9108/mcp", timeout_seconds=5.0))
+                ftools = await fclient.list_tools()
+                assert sorted(t["name"] for t in ftools) == ["firewall_addresses", "firewall_policies", "interfaces", "system_performance", "system_status"]
+                fcall = await fclient.call_tool("system_status", {})
+                assert not fcall.ok, "fortigate down seharusnya isError"
+                print(f"✓ fortigate tools/list → {len(ftools)} tools; call saat down → isError rapi")
+                await fclient.close()
+            finally:
+                unifi.terminate()
+                mikrotik.terminate()
+                fortigate.terminate()
+                for p in (unifi, mikrotik, fortigate):
+                    try:
+                        p.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        p.kill()
         finally:
             wazuh.terminate()
             dockerm.terminate()
@@ -139,7 +177,7 @@ async def main() -> None:
                 except subprocess.TimeoutExpired:
                     p.kill()
 
-        print("SMOKE F6-02/F6-03 OK")
+        print("SMOKE F6-02/F6-03/F6-04 OK")
     finally:
         prom.terminate()
         grafana.terminate()
