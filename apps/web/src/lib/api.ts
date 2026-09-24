@@ -7,6 +7,7 @@ export type ApiErrorCode =
   | "UNAUTHENTICATED"
   | "NO_COMPANY"
   | "PERMISSION_DENIED"
+  | "FORBIDDEN"
   | "NOT_FOUND"
   | "VALIDATION_ERROR"
   | "CONFLICT"

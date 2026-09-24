@@ -189,3 +189,40 @@ class InternalAPI:
                 "run_id": run_id,
             },
         )
+
+    # ---------------- MCP (F6-01) ----------------
+    async def authorize_mcp(
+        self,
+        *,
+        server_id: str,
+        tool_name: str,
+        args: dict[str, Any],
+        company_id: str,
+        agent_id: str,
+        room_id: str | None,
+        run_id: str | None,
+    ) -> dict[str, Any]:
+        """Minta keputusan izin + connection detail dari web.
+
+        HTTP 202 diterjemahkan ke dict dengan `requires_approval=True`
+        (pola sama dengan F5-03); error >= 400 lain tetap raise.
+        """
+        body = {
+            "server_id": server_id,
+            "tool_name": tool_name,
+            "args": args,
+            "company_id": company_id,
+            "agent_id": agent_id,
+            "room_id": room_id,
+            "run_id": run_id,
+        }
+        resp = await self.client.post("/api/internal/mcp/authorize", json=body)
+        if resp.status_code == 202:
+            data = resp.json()
+            payload = data.get("data", data)
+            payload.setdefault("requires_approval", True)
+            return payload
+        if resp.status_code >= 400:
+            raise InternalAPIError(resp.status_code, "/api/internal/mcp/authorize", resp.text)
+        parsed = resp.json()
+        return parsed.get("data", parsed)

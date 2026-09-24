@@ -5,8 +5,8 @@
 >
 > Dokumen terkait: [PRD](./ORVEXA_Final_PRD_v1.0.md) · [docs/](./docs/README.md)
 
-**Terakhir diupdate:** 2026-09-22
-**Fase saat ini:** Fase 6 — Integrations & MCP
+**Terakhir diupdate:** 2026-09-24
+**Fase saat ini:** Fase 6 — Integrations & MCP (F6-01 selesai)
 
 ---
 
@@ -37,8 +37,8 @@
 | 2 | Kolaborasi (Rooms & Realtime) | 🟢 Selesai | 7/7 |
 | 3 | AI Infrastructure Department | 🟢 Selesai | 9/9 |
 | 4 | Agent Intelligence | 🟢 Selesai | 7/7 |
-| 5 | Governance | 🟡 Berjalan | 6/7 |
-| 6 | Integrations & MCP | ⚪ Belum | 0/7 |
+| 5 | Governance | 🟢 Selesai | 7/7 |
+| 6 | Integrations & MCP | 🟡 Berjalan | 1/7 |
 
 **Legenda status fase:** 🟢 Selesai · 🟡 Berjalan · ⚪ Belum mulai · 🔴 Blocked
 
@@ -302,7 +302,25 @@ tools.ts: +agent.delegate, +memory.save, +kb.search
 
 ## 8. Fase 6 — Integrations & MCP
 
-- [ ] **F6-01** MCP client di worker
+- [x] **F6-01** MCP client di worker
+      — `worker/mcp/client.py`: JSON-RPC 2.0, transport **http** (Streamable HTTP,
+      dukung respons JSON/SSE + header `Mcp-Session-Id`) dan **stdio** (spawn proses),
+      handshake `initialize` + `notifications/initialized`, `tools/call` (flatten
+      konten → teks), `tools/list`, `ping`; cache `McpClient` per server antar step.
+      Sisi web: `lib/mcp.ts` (pure: fn-name mapping simetris `mcp__<server>__<tool>`,
+      gate fail-closed `agent_mcp_access`, sanitasi argumen audit, ekspansi deferred
+      placeholder `${CREDENTIALS.<id>}`), `lib/mcp-resolver.ts` (DB: spec tool MCP
+      per agent, fail-closed tanpa grant), merge ke konteks run di
+      `agent-context.ts`, endpoint internal **POST /api/internal/mcp/authorize**
+      (satu pintu izin + audit: server/tool enabled → grant → permission matrix
+      F5-01 → 202 approval_required | 200 connection-detail + args ter-injeksi
+      kredensial untuk MCP client worker). Tool sensitif (risk high/critical /
+      requiresApproval / override matrix) tetap wajib approval (202) — menyentuh
+      F6-06. `InternalAPI.authorize_mcp()` di worker. Seed: server MCP "demo"
+      (2 tool echo/now + grant `*` ke NOC) bila `MCP_DEMO_URL` diset.
+      `scripts/dev/mock-mcp-server.py` (echo/now/add) + `smoke-mcp-client.py`.
+      Test: 8 unit `mcp.test.mjs` (total 51) + smoke e2e client↔mock OK.
+      DB: tabel mcp_servers/mcp_tools/agent_mcp_access sudah ada sejak 0001.
 - [ ] **F6-02** MCP server: Prometheus / Grafana
 - [ ] **F6-03** MCP server: Wazuh, Docker, Kubernetes
 - [ ] **F6-04** MCP server: UniFi, MikroTik, Firewall
@@ -507,6 +525,37 @@ visual state of the agents inside the Virtual Office.
 ## 11. Revision Log
 
 > Catat perubahan penting, keputusan yang direvisi, atau fitur baru. Terbaru di atas.
+
+### 2026-09-24 (sesi 20 — F6-01 MCP client di worker)
+
+- **R-069** — **F6-01 selesai**: MCP client di worker (`worker/mcp/client.py`) dengan
+  dua transport — **http** (Streamable HTTP; JSON atau SSE, header `Mcp-Session-Id`
+  dipertahankan antar panggilan) dan **stdio** (spawn proses via `shlex.split`,
+  satu proses dipertahankan per client). Handshake `initialize` + notification
+  `notifications/initialized`; hasil `tools/call` di-flatten (text/json/resource →
+  teks ≤8000 char) siap dimakan LLM.
+- **R-070** — **Izin tetap satu pintu di web** (konsisten R-027/R-048): eksekusi tool
+  MCP diawali `POST /api/internal/mcp/authorize` — urutan fail-closed: server/tool
+  enabled → grant `agent_mcp_access` (`["*"]` wildcard) → permission matrix F5-01
+  (permission key `mcp.<server>.<tool>`, unknown → disabled) → `approval_required`
+  dijawab **HTTP 202** (pola F5-03), `allow` dijawab **200** berisi connection
+  detail + args yang sudah ter-injeksi kredensial. Web tidak pernah menjadi
+  proksi transport MCP; worker yang memanggil server lewat client-nya.
+- **R-071** — **Kredensial deferred injection**: argumen tool boleh memuat placeholder
+  `${CREDENTIALS.<id>}`; plaintext hanya di-resolve di authorize (lookup
+  `ai_credentials` per company, AES-256-GCM) dan TIDAK PERNAH masuk konteks run,
+  prompt, tool.call event, maupun audit log (args di-sanitasi `sanitizeMcpToolArgs`:
+  field secret/token/password → `[redacted]`, string panjang dipotong).
+- **R-072** — **Fn-name simetris web↔worker**: `mcpFnName()` (TS) dan `_safe_fn_part()`
+  (Python) sama-sama sanitasi `[a-zA-Z0-9_]` → `mcp__<server>__<tool>`; worker mengenali
+  tool MCP dari pattern fn-name (bukan parsing key `mcp.<server>.<tool>` yang
+  ambigu) lalu lookup spec di konteks run. Lookup gagal → tool ditolak
+  (`not_in_context`) — agent tidak bisa memanggil tool MCP yang tidak di-grant.
+- **R-073** — Test 51 (tambah 8 `mcp.test.mjs`): key/permission konsisten, fn-name
+  roundtrip, gate fail-closed, sanitasi argumen, placeholder kredensial
+  (deteksi/koleksi/ekspansi + fail-visible), spec builder (tanpa grant/disabled →
+  null, risk high → approval), dekripsi auth fail-closed. Smoke e2e client↔mock
+  (tools/list, echo, now, add) lulus.
 
 ### 2026-09-23 (sesi 19 — Halaman Settings + fix agregasi cost)
 

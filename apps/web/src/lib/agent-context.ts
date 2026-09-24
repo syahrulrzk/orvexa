@@ -14,6 +14,7 @@ import {
   users,
 } from "./db/schema";
 import { recallMemories, type MemoryItem } from "./memory";
+import { listMcpToolsForAgent } from "./mcp-resolver";
 import { resolveAgentTools, type ToolSpec } from "./tools";
 
 /**
@@ -114,6 +115,14 @@ export async function loadAgentContext(
     agentId,
     toolRows.length > 0 ? enabledToolKeys : null,
   );
+
+  // --- Tools MCP (F6-01): merge, gagal-toleran (KB MCP mati ≠ run mati) ---
+  try {
+    const mcpSpecs = await listMcpToolsForAgent(agent.companyId, agentId);
+    toolSpecs.push(...mcpSpecs);
+  } catch {
+    // Tanpa MCP pun run harus tetap jalan.
+  }
 
   // --- Permissions ---
   const permRows = await db

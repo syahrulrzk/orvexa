@@ -177,6 +177,40 @@ export async function resolveAgentProvider(agent: AgentProviderRow): Promise<Res
   };
 }
 
+/**
+ * F6-01: plaintext satu kredensial company untuk placeholder
+ * `${CREDENTIALS.<id>}` pada argumen tool MCP. Hanya dipakai oleh
+ * `/api/internal/mcp/authorize` (bearer internal), dan hanya diberikan
+ * untuk kredensial milik company yang sama.
+ */
+export async function resolveCredentialPlaintext(
+  companyId: string,
+  credentialId: string,
+): Promise<string | null> {
+  if (!credentialId || !hasMasterKey()) return null;
+  const [cred] = await db
+    .select({
+      secretCipher: aiCredentials.secretCipher,
+      secretIv: aiCredentials.secretIv,
+    })
+    .from(aiCredentials)
+    .where(
+      and(
+        eq(aiCredentials.id, credentialId),
+        eq(aiCredentials.companyId, companyId),
+        eq(aiCredentials.isEnabled, true),
+        isNull(aiCredentials.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!cred) return null;
+  try {
+    return decryptSecret({ cipher: cred.secretCipher, iv: cred.secretIv });
+  } catch {
+    return null;
+  }
+}
+
 /** Provider default yang terpasang (dipakai endpoint `/api/internal/providers`). */
 export async function listAvailableProviderKinds(companyId: string): Promise<ProviderKind[]> {
   const rows = await db

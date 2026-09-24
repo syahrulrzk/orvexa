@@ -499,6 +499,7 @@ di bawah agar validasi, RBAC, dan publikasi event tetap konsisten.
 | POST | `/api/internal/runs/:id/messages` | Agent kirim pesan ke room (+ update agregat thread, publish `message.created`) |
 | POST | `/api/internal/usage` | Catat `ai_usage`, balas akumulasi biaya harian & `budget_exceeded` |
 | POST | `/api/internal/tools/execute` | Eksekusi tool builtin (`room.post`, `task.create`, `doc.generate`) |
+| POST | `/api/internal/mcp/authorize` | Keputusan izin tool MCP (F6-01): 202 = approval_required, 200 = connection detail + args ter-injeksi untuk MCP client worker |
 
 Contoh respons konteks (dipotong):
 
@@ -517,6 +518,41 @@ Contoh respons konteks (dipotong):
     "skills": [{ "name": "Prometheus", "prompt_hint": null }],
     "tools": [{ "key": "room.post", "permission": "room.write", "requires_approval": false }],
     "budget": { "max_steps": 8, "max_tokens": 12000 }
+  }
+}
+```
+
+#### POST /api/internal/mcp/authorize (F6-01)
+
+Body: `{ server_id, tool_name, args, company_id, agent_id, room_id?, run_id? }`
+
+Urutan keputusan (fail-closed): server/tool enabled → grant `agent_mcp_access`
+(wildcard `"*"` diizinkan) → permission matrix F5-01 dengan permission key
+`mcp.<server>.<tool>`.
+
+- **202** — butuh approval (override matrix, risk high/critical, atau
+  `requires_approval`): `{ "data": { "ok": false, "requires_approval": true, ... } }`
+- **403** — tanpa grant / disabled oleh matrix
+- **200** — diizinkan; respons berisi connection detail untuk MCP client worker:
+
+```json
+{
+  "data": {
+    "ok": true,
+    "key": "mcp.demo.echo",
+    "args": { "message": "halo" },
+    "mcp": {
+      "server_id": "mcp_...", "server_name": "demo", "tool_name": "echo",
+      "transport": "http", "endpoint": "http://mock:8091/mcp", "command": null,
+      "auth": null, "headers": {}, "timeout_seconds": 30
+    }
+  }
+}
+```
+
+Placeholder `${CREDENTIALS.<id>}` pada `args` diekspansi ke plaintext kredensial
+(di sini — tidak pernah masuk konteks run / prompt / audit). Audit ditulis via
+`logActivity` (`mcp.tool.authorized/denied/approval_required`).
   }
 }
 ```

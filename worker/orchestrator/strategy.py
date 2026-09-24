@@ -12,14 +12,22 @@ Cara menambah strategi baru:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 import time
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from mcp import McpClient, McpError, McpServerConfig
 from providers import Message, ToolSpec, get_provider
-from runtime import BudgetExceeded, build_messages, new_id, render_tool_result
+from runtime import (
+    BudgetExceeded,
+    InternalAPIError,
+    build_messages,
+    new_id,
+    render_tool_result,
+)
 
 if TYPE_CHECKING:
     from .loop import Job, RunContext
@@ -30,13 +38,28 @@ logger = logging.getLogger("orvexa.strategy")
 # sehingga "room.post" dipetakan menjadi "room__post".
 _FN_SEP = "__"
 
-
+# F6-01: key tool MCP dari web berbentuk "mcp.<server>.<tool>". Karena
+# server/tool bisa mengandung karakter di luar [a-zA-Z0-9_-], lookup spec
+# dilakukan via fn-name (disanitasi sama dengan sisi web), bukan parsing key.
 def fn_name(tool_key: str) -> str:
     return tool_key.replace(".", _FN_SEP).replace("-", "_")
 
 
+def _safe_fn_part(value: str) -> str:
+    """Sanitasi identik dengan `mcpFnName()` di apps/web/src/lib/mcp.ts."""
+    return re.sub(r"[^a-zA-Z0-9]+", "_", value)
+
+
+def mcp_fn_name(server_name: str, tool_name: str) -> str:
+    return f"mcp{_FN_SEP}{_safe_fn_part(server_name)}{_FN_SEP}{_safe_fn_part(tool_name)}"
+
+
 def tool_key_from_fn(name: str) -> str:
     return name.replace(_FN_SEP, ".")
+
+
+def _is_mcp_spec(spec: dict[str, Any]) -> bool:
+    return isinstance(spec.get("mcp"), dict) and bool(spec["mcp"].get("server_id"))
 
 
 @runtime_checkable
@@ -126,7 +149,11 @@ class DefaultStrategy:
         tool_specs = (
             [
                 ToolSpec(
-                    name=fn_name(t["key"]),
+                    name=(
+                        mcp_fn_name(t["mcp"]["server_name"], t["mcp"]["tool_name"])
+                        if _is_mcp_spec(t)
+                        else fn_name(t["key"])
+                    ),
                     description=t["description"],
                     parameters=t["parameters"],
                 )
@@ -204,7 +231,20 @@ class DefaultStrategy:
                 if parsed:
                     key, args = parsed
                     accumulated.pop()
-                    calls = [{"id": new_id("call"), "name": fn_name(key), "arguments": json.dumps(args)}]
+                    spec = next(
+                        (
+                            t
+                            for t in run_ctx.context.get("tools") or []
+                            if t["key"] == key or _is_mcp_spec(t) and t["mcp"]["tool_name"] == key
+                        ),
+                        None,
+                    )
+                    fname = (
+                        mcp_fn_name(spec["mcp"]["server_name"], spec["mcp"]["tool_name"])
+                        if spec and _is_mcp_spec(spec)
+                        else fn_name(key)
+                    )
+                    calls = [{"id": new_id("call"), "name": fname, "arguments": json.dumps(args)}]
 
             if not calls:
                 break
@@ -276,7 +316,7 @@ class DefaultStrategy:
         return None
 
     async def _run_tool(self, run_ctx: "RunContext", call: dict[str, Any]) -> str:
-        key = tool_key_from_fn(str(call["name"]))
+        raw_name = str(call["name"])
         try:
             args = json.loads(call.get("arguments") or "{}")
             if not isinstance(args, dict):
@@ -284,6 +324,13 @@ class DefaultStrategy:
         except json.JSONDecodeError:
             args = {}
 
+        # F6-01: tool MCP dikenali dari fn-name `mcp__<server>__<tool>` —
+        # jalannya lewat authorize (web) + McpClient (worker), bukan execute_tool.
+        mcp_match = re.match(r"^mcp__([a-zA-Z0-9_]+)__([a-zA-Z0-9_]+)$", raw_name)
+        if mcp_match:
+            return await self._run_mcp_tool(run_ctx, mcp_match.group(1), mcp_match.group(2), args)
+
+        key = tool_key_from_fn(raw_name)
         spec = next((t for t in run_ctx.context.get("tools") or [] if t["key"] == key), None)
         permission = (spec or {}).get("permission") or key
         effect = self._permission_effect(run_ctx, permission)
@@ -343,6 +390,141 @@ class DefaultStrategy:
         )
 
         return render_tool_result(key, ok, result, error)
+
+    # ------------------------------------------------------------------
+    # MCP (F6-01)
+    # ------------------------------------------------------------------
+
+    async def _run_mcp_tool(
+        self, run_ctx: "RunContext", server_part: str, tool_part: str, args: dict[str, Any]
+    ) -> str:
+        """Authorize di web → eksekusi lewat MCP client di worker.
+
+        Authorize adalah satu pintu izin + audit; hasilnya berisi connection
+        detail + args yang sudah ter-injeksi kredensial (placeholder
+        `${CREDENTIALS.<id>}`) sehingga kredensial tidak pernah melewati
+        konteks run / prompt.
+        """
+        spec = next(
+            (
+                t
+                for t in run_ctx.context.get("tools") or []
+                if _is_mcp_spec(t)
+                and _safe_fn_part(t["mcp"]["server_name"]) == server_part
+                and _safe_fn_part(t["mcp"]["tool_name"]) == tool_part
+            ),
+            None,
+        )
+        if spec is None:
+            label = f"mcp.{server_part}.{tool_part}"
+            message = f"Tool MCP `{label}` tidak ada di konteks run ini."
+            run_ctx.add_event("tool.denied", {"tool_key": label, "reason": "not_in_context"})
+            await run_ctx.publisher.tool_result(
+                run_ctx.room_id, run_ctx.job.agent_id, run_ctx.run_id, label, False, message
+            )
+            return message
+
+        mcp_meta = spec["mcp"]
+        tool_label = f"mcp.{mcp_meta['server_name']}.{mcp_meta['tool_name']}"
+        effect = self._permission_effect(run_ctx, spec.get("permission") or tool_label)
+
+        run_ctx.add_event("tool.call", {"tool_key": tool_label, "args": args, "effect": effect})
+        await run_ctx.publisher.tool_call(
+            run_ctx.room_id, run_ctx.job.agent_id, run_ctx.run_id, tool_label, args
+        )
+
+        if effect in ("disabled", "approval_required"):
+            message = (
+                f"Tool `{tool_label}` butuh approval manusia sebelum dijalankan. "
+                "Ajukan approval dan jelaskan rencanamu; jangan mengklaim sudah dijalankan."
+                if effect == "approval_required"
+                else f"Tool `{tool_label}` dinonaktifkan untuk agent ini."
+            )
+            run_ctx.add_event(
+                "tool.approval_required" if effect == "approval_required" else "tool.denied",
+                {"tool_key": tool_label, "args": args},
+            )
+            await run_ctx.publisher.tool_result(
+                run_ctx.room_id, run_ctx.job.agent_id, run_ctx.run_id, tool_label, False, message
+            )
+            return message
+
+        try:
+            decision = await run_ctx.api.authorize_mcp(
+                server_id=mcp_meta["server_id"],
+                tool_name=mcp_meta["tool_name"],
+                args=args,
+                company_id=run_ctx.job.company_id,
+                agent_id=run_ctx.job.agent_id,
+                room_id=run_ctx.room_id,
+                run_id=run_ctx.run_id,
+            )
+        except InternalAPIError as exc:
+            logger.warning("authorize MCP %s gagal: %s", tool_label, exc)
+            ok, text, raw = False, "", {"error": str(exc)}
+            run_ctx.tool_calls.append({"tool_key": tool_label, "ok": False, "args": args, "result": None, "error": str(exc)})
+            run_ctx.add_event("tool.result", {"tool_key": tool_label, "ok": False, "error": str(exc)[:300]})
+            await run_ctx.publisher.tool_result(
+                run_ctx.room_id, run_ctx.job.agent_id, run_ctx.run_id, tool_label, False, str(exc)
+            )
+            return render_tool_result(tool_label, False, None, str(exc))
+
+        if decision.get("requires_approval"):
+            message = (
+                f"Tool `{tool_label}` butuh approval manusia sebelum dijalankan. "
+                "Ajukan approval dan jelaskan rencanamu; jangan mengklaim sudah dijalankan."
+            )
+            run_ctx.add_event("tool.approval_required", {"tool_key": tool_label, "args": args})
+            await run_ctx.publisher.tool_result(
+                run_ctx.room_id, run_ctx.job.agent_id, run_ctx.run_id, tool_label, False, message
+            )
+            return message
+
+        if not decision.get("ok"):
+            error = str(decision.get("error") or "authorize MCP gagal.")
+            run_ctx.tool_calls.append({"tool_key": tool_label, "ok": False, "args": args, "result": None, "error": error})
+            run_ctx.add_event("tool.result", {"tool_key": tool_label, "ok": False, "error": error[:300]})
+            await run_ctx.publisher.tool_result(
+                run_ctx.room_id, run_ctx.job.agent_id, run_ctx.run_id, tool_label, False, error
+            )
+            return render_tool_result(tool_label, False, None, error)
+
+        conn = decision.get("mcp") or {}
+        final_args = decision.get("args") if isinstance(decision.get("args"), dict) else args
+        try:
+            client = self._get_mcp_client(mcp_meta["server_id"], conn)
+            result = await client.call_tool(mcp_meta["tool_name"], final_args)
+            ok, text, raw = result.ok, result.text, result.raw
+        except (McpError, asyncio.TimeoutError, OSError) as exc:
+            logger.warning("eksekusi MCP %s gagal: %s", tool_label, exc)
+            ok, text, raw = False, "", {"error": str(exc)}
+
+        run_ctx.tool_calls.append(
+            {
+                "tool_key": tool_label,
+                "ok": ok,
+                "args": final_args,
+                "result": raw if ok else None,
+                "error": None if ok else (text or str(raw)),
+            }
+        )
+        run_ctx.add_event("tool.result", {"tool_key": tool_label, "ok": ok, "error": None if ok else (text or str(raw))[:300]})
+        await run_ctx.publisher.tool_result(
+            run_ctx.room_id, run_ctx.job.agent_id, run_ctx.run_id, tool_label, ok, text or str(raw)
+        )
+        return render_tool_result(tool_label, ok, text, None if ok else str(raw))
+
+    def _get_mcp_client(self, server_id: str, conn: dict[str, Any]) -> McpClient:
+        """Cache McpClient per server (reuse sesi HTTP / proses stdio antar step)."""
+        cache = getattr(self, "_mcp_clients", None)
+        if cache is None:
+            cache = {}
+            setattr(self, "_mcp_clients", cache)
+        client = cache.get(server_id)
+        if client is None:
+            client = McpClient(McpServerConfig.from_payload(conn))
+            cache[server_id] = client
+        return client
 
     async def _resume_from_approval(self, run_ctx: "RunContext") -> None:
         """Sampaikan hasil keputusan approval ke room & tutup run dengan rapi."""

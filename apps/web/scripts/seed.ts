@@ -516,6 +516,77 @@ async function main(): Promise<void> {
   }
   console.log(`✓ agent skills: ${skillLinks} · agent tools: ${toolLinks}`);
 
+  // --- MCP demo server (F6-01): server http + stdio untuk uji offline ---
+  // Tools-nya diuji lewat scripts/dev/mock-mcp-server.py (transport HTTP).
+  const mcpDemoUrl = process.env.MCP_DEMO_URL?.trim();
+  if (mcpDemoUrl) {
+    const existing = await db
+      .select({ id: schema.mcpServers.id })
+      .from(schema.mcpServers)
+      .where(and(eq(schema.mcpServers.companyId, company.id), eq(schema.mcpServers.name, "demo")))
+      .limit(1);
+
+    let mcpServerId: string;
+    if (existing[0]) {
+      mcpServerId = existing[0].id;
+      await db
+        .update(schema.mcpServers)
+        .set({ transport: "http", endpoint: mcpDemoUrl, isEnabled: true, updatedAt: new Date() })
+        .where(eq(schema.mcpServers.id, mcpServerId));
+    } else {
+      mcpServerId = newId("mcp");
+      await db.insert(schema.mcpServers).values({
+        id: mcpServerId,
+        companyId: company.id,
+        name: "demo",
+        transport: "http",
+        endpoint: mcpDemoUrl,
+        isEnabled: true,
+        config: {},
+      });
+    }
+
+    const demoTools = [
+      {
+        toolName: "echo",
+        description: "Kembalikan pesan yang dikirim (uji konektivitas MCP).",
+        inputSchema: {
+          type: "object",
+          properties: { message: { type: "string", description: "Teks yang di-echo." } },
+          required: ["message"],
+          additionalProperties: false,
+        },
+        riskLevel: "low",
+        requiresApproval: false,
+      },
+      {
+        toolName: "now",
+        description: "Waktu server MCP saat ini (WIB).",
+        inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+        riskLevel: "low",
+        requiresApproval: false,
+      },
+    ];
+    for (const t of demoTools) {
+      await db
+        .insert(schema.mcpTools)
+        .values({ id: newId("mtl"), mcpServerId, ...t })
+        .onConflictDoNothing();
+    }
+
+    // Grant ke NOC agent (pertama) supaya bisa dipakai e2e.
+    const nocAgentId = agentIdByName.get("NOC");
+    if (nocAgentId) {
+      await db
+        .insert(schema.agentMcpAccess)
+        .values({ id: newId("ama"), agentId: nocAgentId, mcpServerId, allowedTools: ["*"] })
+        .onConflictDoNothing();
+    }
+    console.log(`✓ MCP demo server (http: ${mcpDemoUrl}) + 2 tools + grant NOC`);
+  } else {
+    console.log("– MCP demo dilewati (set MCP_DEMO_URL untuk mengaktifkan)");
+  }
+
   console.log("\nSeed selesai. Login dengan lead@orvexa.dev / orvexa12345");
 
   await pgClient.end();
