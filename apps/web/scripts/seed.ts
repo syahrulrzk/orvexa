@@ -516,37 +516,76 @@ async function main(): Promise<void> {
   }
   console.log(`✓ agent skills: ${skillLinks} · agent tools: ${toolLinks}`);
 
-  // --- MCP demo server (F6-01): server http + stdio untuk uji offline ---
-  // Tools-nya diuji lewat scripts/dev/mock-mcp-server.py (transport HTTP).
-  const mcpDemoUrl = process.env.MCP_DEMO_URL?.trim();
-  if (mcpDemoUrl) {
+  // --- MCP servers (F6-01/F6-02) ---
+  // Demo: uji konektivitas (mock-mcp-server.py). Prometheus/Grafana: F6-02.
+  // Bearer token env dienkripsi AES-256-GCM ke auth_cipher (jalur auth sama
+  // dengan yang dipakai MCP client worker).
+  const nocAgentId = agentIdByName.get("NOC");
+  // encryptSecret & hasMasterKey sudah diimpor di bagian provider bootstrap.
+
+  const upsertMcpServer = async (
+    name: string,
+    endpoint: string,
+    tools: { toolName: string; description: string; inputSchema: Record<string, unknown> }[],
+    bearer?: string,
+  ): Promise<void> => {
     const existing = await db
       .select({ id: schema.mcpServers.id })
       .from(schema.mcpServers)
-      .where(and(eq(schema.mcpServers.companyId, company.id), eq(schema.mcpServers.name, "demo")))
+      .where(and(eq(schema.mcpServers.companyId, company.id), eq(schema.mcpServers.name, name)))
       .limit(1);
 
     let mcpServerId: string;
+    const authEnc = bearer && hasMasterKey() ? encryptSecret(bearer) : null;
+    const serverValues = {
+      transport: "http" as const,
+      endpoint,
+      isEnabled: true,
+      updatedAt: new Date(),
+      ...(authEnc
+        ? { authCipher: authEnc.cipher, authIv: authEnc.iv, keyVersion: authEnc.keyVersion }
+        : {}),
+    };
     if (existing[0]) {
       mcpServerId = existing[0].id;
-      await db
-        .update(schema.mcpServers)
-        .set({ transport: "http", endpoint: mcpDemoUrl, isEnabled: true, updatedAt: new Date() })
-        .where(eq(schema.mcpServers.id, mcpServerId));
+      await db.update(schema.mcpServers).set(serverValues).where(eq(schema.mcpServers.id, mcpServerId));
     } else {
       mcpServerId = newId("mcp");
       await db.insert(schema.mcpServers).values({
         id: mcpServerId,
         companyId: company.id,
-        name: "demo",
-        transport: "http",
-        endpoint: mcpDemoUrl,
-        isEnabled: true,
+        name,
         config: {},
+        ...serverValues,
       });
     }
 
-    const demoTools = [
+    for (const t of tools) {
+      await db
+        .insert(schema.mcpTools)
+        .values({
+          id: newId("mtl"),
+          mcpServerId,
+          toolName: t.toolName,
+          description: t.description,
+          inputSchema: t.inputSchema,
+          riskLevel: "low",
+          requiresApproval: false,
+        })
+        .onConflictDoNothing();
+    }
+
+    if (nocAgentId) {
+      await db
+        .insert(schema.agentMcpAccess)
+        .values({ id: newId("ama"), agentId: nocAgentId, mcpServerId, allowedTools: ["*"] })
+        .onConflictDoNothing();
+    }
+  };
+
+  const mcpDemoUrl = process.env.MCP_DEMO_URL?.trim();
+  if (mcpDemoUrl) {
+    await upsertMcpServer("demo", mcpDemoUrl, [
       {
         toolName: "echo",
         description: "Kembalikan pesan yang dikirim (uji konektivitas MCP).",
@@ -556,35 +595,108 @@ async function main(): Promise<void> {
           required: ["message"],
           additionalProperties: false,
         },
-        riskLevel: "low",
-        requiresApproval: false,
       },
       {
         toolName: "now",
         description: "Waktu server MCP saat ini (WIB).",
         inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
-        riskLevel: "low",
-        requiresApproval: false,
       },
-    ];
-    for (const t of demoTools) {
-      await db
-        .insert(schema.mcpTools)
-        .values({ id: newId("mtl"), mcpServerId, ...t })
-        .onConflictDoNothing();
-    }
-
-    // Grant ke NOC agent (pertama) supaya bisa dipakai e2e.
-    const nocAgentId = agentIdByName.get("NOC");
-    if (nocAgentId) {
-      await db
-        .insert(schema.agentMcpAccess)
-        .values({ id: newId("ama"), agentId: nocAgentId, mcpServerId, allowedTools: ["*"] })
-        .onConflictDoNothing();
-    }
+    ]);
     console.log(`✓ MCP demo server (http: ${mcpDemoUrl}) + 2 tools + grant NOC`);
   } else {
     console.log("– MCP demo dilewati (set MCP_DEMO_URL untuk mengaktifkan)");
+  }
+
+  const mcpPromUrl = process.env.MCP_PROMETHEUS_URL?.trim();
+  if (mcpPromUrl) {
+    await upsertMcpServer(
+      "prometheus",
+      mcpPromUrl,
+      [
+        {
+          toolName: "query",
+          description: "Instant query PromQL (metrics saat ini).",
+          inputSchema: {
+            type: "object",
+            properties: { query: { type: "string" } },
+            required: ["query"],
+            additionalProperties: false,
+          },
+        },
+        {
+          toolName: "query_range",
+          description: "Range query PromQL (deret waktu, butuh start/end/step).",
+          inputSchema: {
+            type: "object",
+            properties: { query: { type: "string" }, start: { type: "string" }, end: { type: "string" }, step: { type: "string" } },
+            required: ["query", "start", "end", "step"],
+            additionalProperties: false,
+          },
+        },
+        {
+          toolName: "alerts",
+          description: "Daftar alert Prometheus yang aktif.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "targets",
+          description: "Daftar scrape target Prometheus + health (up/down).",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "health",
+          description: "Cek kesehatan server Prometheus.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+      ],
+      process.env.MCP_PROM_BEARER?.trim() || undefined,
+    );
+    console.log(`✓ MCP prometheus server (http: ${mcpPromUrl}) + 5 tools + grant NOC`);
+  } else {
+    console.log("– MCP prometheus dilewati (set MCP_PROMETHEUS_URL untuk mengaktifkan)");
+  }
+
+  const mcpGrafanaUrl = process.env.MCP_GRAFANA_URL?.trim();
+  if (mcpGrafanaUrl) {
+    await upsertMcpServer(
+      "grafana",
+      mcpGrafanaUrl,
+      [
+        {
+          toolName: "search_dashboards",
+          description: "Cari dashboard Grafana (query/tag).",
+          inputSchema: {
+            type: "object",
+            properties: { query: { type: "string" }, tag: { type: "string" } },
+            additionalProperties: false,
+          },
+        },
+        {
+          toolName: "get_dashboard",
+          description: "Detail dashboard Grafana by uid (judul, panel, URL).",
+          inputSchema: {
+            type: "object",
+            properties: { uid: { type: "string" } },
+            required: ["uid"],
+            additionalProperties: false,
+          },
+        },
+        {
+          toolName: "datasources",
+          description: "Daftar datasource Grafana.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "health",
+          description: "Cek kesehatan Grafana.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+      ],
+      process.env.MCP_GRAFANA_BEARER?.trim() || undefined,
+    );
+    console.log(`✓ MCP grafana server (http: ${mcpGrafanaUrl}) + 4 tools + grant NOC`);
+  } else {
+    console.log("– MCP grafana dilewati (set MCP_GRAFANA_URL untuk mengaktifkan)");
   }
 
   console.log("\nSeed selesai. Login dengan lead@orvexa.dev / orvexa12345");

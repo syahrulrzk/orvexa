@@ -38,7 +38,7 @@
 | 3 | AI Infrastructure Department | 🟢 Selesai | 9/9 |
 | 4 | Agent Intelligence | 🟢 Selesai | 7/7 |
 | 5 | Governance | 🟢 Selesai | 7/7 |
-| 6 | Integrations & MCP | 🟡 Berjalan | 1/7 |
+| 6 | Integrations & MCP | 🟡 Berjalan | 2/7 |
 
 **Legenda status fase:** 🟢 Selesai · 🟡 Berjalan · ⚪ Belum mulai · 🔴 Blocked
 
@@ -321,7 +321,19 @@ tools.ts: +agent.delegate, +memory.save, +kb.search
       `scripts/dev/mock-mcp-server.py` (echo/now/add) + `smoke-mcp-client.py`.
       Test: 8 unit `mcp.test.mjs` (total 51) + smoke e2e client↔mock OK.
       DB: tabel mcp_servers/mcp_tools/agent_mcp_access sudah ada sejak 0001.
-- [ ] **F6-02** MCP server: Prometheus / Grafana
+- [x] **F6-02** MCP server: Prometheus / Grafana
+      — `mcp-servers/`: kit reusable (`common.py` — HTTP handler JSON-RPC 2.0,
+      routing initialize/tools, registry `McpTool`, health endpoint, Bearer auth
+      inline opsional) + dua server konkret **read-only**:
+      `prometheus_server.py` (query, query_range, alerts, targets, health →
+      Prometheus API) dan `grafana_server.py` (search_dashboards, get_dashboard,
+      datasources, health → Grafana API, auth service-account/basic).
+      Dockerfile bersama + 2 service compose (`--profile mcp`, port 9101/9102)
+      + env `MCP_PROMETHEUS_URL`/`MCP_GRAFANA_URL` (seed auto-register tools +
+      grant wildcard ke NOC; bearer env dienkripsi ke `auth_cipher`).
+      Error upstream dilaporkan sebagai tool isError (fail-open utk health),
+      bukan crash. Test: 13 unittest (`test_mcp_servers.py`, HTTP di-mock) +
+      smoke e2e `scripts/dev/smoke-mcp-servers.py` (kit ↔ MCP client worker).
 - [ ] **F6-03** MCP server: Wazuh, Docker, Kubernetes
 - [ ] **F6-04** MCP server: UniFi, MikroTik, Firewall
 - [ ] **F6-05** Integrasi n8n
@@ -525,6 +537,27 @@ visual state of the agents inside the Virtual Office.
 ## 11. Revision Log
 
 > Catat perubahan penting, keputusan yang direvisi, atau fitur baru. Terbaru di atas.
+
+### 2026-09-24 (sesi 21 — F6-02 MCP server Prometheus & Grafana)
+
+- **R-074** — **F6-02 selesai**: dua server MCP bawaan Orvexa dibangun di
+  `mcp-servers/` memakai kit JSON-RPC 2.0 shared — Prometheus (5 tool read-only:
+  query, query_range, alerts, targets, health) dan Grafana (4 tool: search,
+  detail dashboard, datasources, health). Semua tool memakai kredensial
+  server-side (env service), tidak pernah dikirim ke LLM.
+- **R-075** — **Error upstream ≠ crash**: kegagalan HTTP Prometheus/Grafana
+  dilaporkan sebagai `isError: true` content MCP (fail-open khusus tool
+  `health`) sehingga agent menerima jawaban yang bisa direasoning, bukan run
+  gagal. Deteksi down target tetap tampil per-target di tool `targets`.
+- **R-076** — **Registrasi via seed + auth terenkripsi**: set
+  `MCP_PROMETHEUS_URL`/`MCP_GRAFANA_URL` lalu `db:seed` → server + tools +
+  grant wildcard ke NOC otomatis; `MCP_PROM_BEARER`/`MCP_GRAFANA_BEARER`
+  dienkripsi AES-256-GCM ke `mcp_servers.auth_cipher` (jalur sama dengan MCP
+  client worker). Compose: `--profile mcp` menjalankan kedua server.
+- **R-077** — 13 unittest baru (HTTP di-mock; katalog seed ⇄ handler ⇄ kit
+  selalu konsisten) + smoke e2e `scripts/dev/smoke-mcp-servers.py` membuktikan
+  kit ↔ `worker/mcp/client.py` kompatibel (initialize, tools/list, tools/call,
+  isError path, health fail-open).
 
 ### 2026-09-24 (sesi 20 — F6-01 MCP client di worker)
 

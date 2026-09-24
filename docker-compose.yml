@@ -91,6 +91,42 @@ services:
         condition: service_started
 
   # ============================================================
+  # MCP servers (F6-02) — Prometheus & Grafana
+  #   Read-only bridge ke stack monitoring; tools terdaftar lewat seed
+  #   (MCP_PROMETHEUS_URL / MCP_GRAFANA_URL) + grant ke agent NOC.
+  # ============================================================
+  mcp-prometheus:
+    build:
+      context: ./mcp-servers
+      dockerfile: Dockerfile
+    container_name: orvexa-mcp-prometheus
+    restart: unless-stopped
+    profiles: ["mcp"]
+    environment:
+      TZ: Asia/Jakarta
+      MCP_PORT: 9101
+      PROMETHEUS_URL: ${PROMETHEUS_URL:-http://localhost:9090}
+      MCP_BEARER_TOKEN: ${MCP_PROM_BEARER:-}
+    ports:
+      - "9101:9101"
+
+  mcp-grafana:
+    build:
+      context: ./mcp-servers
+      dockerfile: Dockerfile
+    container_name: orvexa-mcp-grafana
+    restart: unless-stopped
+    profiles: ["mcp"]
+    environment:
+      TZ: Asia/Jakarta
+      MCP_PORT: 9102
+      GRAFANA_URL: ${GRAFANA_URL:-http://localhost:3001}
+      GRAFANA_API_KEY: ${GRAFANA_API_KEY:-}
+      MCP_BEARER_TOKEN: ${MCP_GRAFANA_BEARER:-}
+    ports:
+      - "9102:9102"
+
+  # ============================================================
   # Reverse proxy + HTTPS otomatis (opsional)
   #   docker compose --profile proxy up -d
   # Butuh domain sudah mengarah ke IP server ini.
