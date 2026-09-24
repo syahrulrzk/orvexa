@@ -100,7 +100,46 @@ async def main() -> None:
         print(f"✓ grafana tools/list + health → {len(gtools)} tools, ok=True")
         await gclient.close()
 
-        print("SMOKE F6-02 OK")
+        # --- 6. F6-03: wazuh / docker / kubernetes (dependency upstream mati →
+        # tools/list tetap jalan; tools/call dilaporkan sebagai isError rapi) ---
+        wazuh = spawn(os.path.join(MCP_DIR, "wazuh_server.py"), 9103, {"MCP_PORT": "9103", "WAZUH_URL": "http://127.0.0.1:15500"})
+        dockerm = spawn(os.path.join(MCP_DIR, "docker_server.py"), 9104, {"MCP_PORT": "9104", "DOCKER_SOCKET": "/nonexistent/docker.sock"})
+        kube = spawn(os.path.join(MCP_DIR, "kubernetes_server.py"), 9105, {"MCP_PORT": "9105", "KUBECTL_BIN": "kubectl-nonexistent"})
+        try:
+            wclient = McpClient(McpServerConfig(transport="http", endpoint="http://127.0.0.1:9103/mcp", timeout_seconds=5.0))
+            wtools = await wclient.list_tools()
+            assert sorted(t["name"] for t in wtools) == ["agent_summary", "agents", "manager_status", "rules", "vulnerabilities"]
+            wcall = await wclient.call_tool("agents", {})
+            assert not wcall.ok, "wazuh down seharusnya isError"
+            print(f"✓ wazuh tools/list → {len(wtools)} tools; call saat down → isError rapi")
+            await wclient.close()
+
+            dclient = McpClient(McpServerConfig(transport="http", endpoint="http://127.0.0.1:9104/mcp", timeout_seconds=5.0))
+            dtools = await dclient.list_tools()
+            assert sorted(t["name"] for t in dtools) == ["containers", "disk_usage", "images", "inspect", "version"]
+            dcall = await dclient.call_tool("containers", {})
+            assert not dcall.ok, "socket mati seharusnya isError"
+            print(f"✓ docker tools/list → {len(dtools)} tools; call socket mati → isError rapi")
+            await dclient.close()
+
+            kclient = McpClient(McpServerConfig(transport="http", endpoint="http://127.0.0.1:9105/mcp", timeout_seconds=5.0))
+            ktools = await kclient.list_tools()
+            assert sorted(t["name"] for t in ktools) == ["deployments", "events", "nodes", "pods", "version"]
+            kcall = await kclient.call_tool("nodes", {})
+            assert not kcall.ok, "kubectl hilang seharusnya isError"
+            print(f"✓ kubernetes tools/list → {len(ktools)} tools; call tanpa kubectl → isError rapi")
+            await kclient.close()
+        finally:
+            wazuh.terminate()
+            dockerm.terminate()
+            kube.terminate()
+            for p in (wazuh, dockerm, kube):
+                try:
+                    p.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    p.kill()
+
+        print("SMOKE F6-02/F6-03 OK")
     finally:
         prom.terminate()
         grafana.terminate()

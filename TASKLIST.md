@@ -38,7 +38,7 @@
 | 3 | AI Infrastructure Department | 🟢 Selesai | 9/9 |
 | 4 | Agent Intelligence | 🟢 Selesai | 7/7 |
 | 5 | Governance | 🟢 Selesai | 7/7 |
-| 6 | Integrations & MCP | 🟡 Berjalan | 2/7 |
+| 6 | Integrations & MCP | 🟡 Berjalan | 3/7 |
 
 **Legenda status fase:** 🟢 Selesai · 🟡 Berjalan · ⚪ Belum mulai · 🔴 Blocked
 
@@ -334,7 +334,19 @@ tools.ts: +agent.delegate, +memory.save, +kb.search
       Error upstream dilaporkan sebagai tool isError (fail-open utk health),
       bukan crash. Test: 13 unittest (`test_mcp_servers.py`, HTTP di-mock) +
       smoke e2e `scripts/dev/smoke-mcp-servers.py` (kit ↔ MCP client worker).
-- [ ] **F6-03** MCP server: Wazuh, Docker, Kubernetes
+- [x] **F6-03** MCP server: Wazuh, Docker, Kubernetes
+      — tiga server MCP **read-only** di kit `mcp-servers/`:
+      `wazuh_server.py` (agents, agent_summary, vulnerabilities, rules,
+      manager_status — JWT Wazuh: basic → token di-cache 800 dtk, retry
+      otomatis saat 401), `docker_server.py` (containers, inspect, images,
+      disk_usage, version — Docker Engine API via **unix socket**, HTTP
+      minimal + dechunker sendiri), `kubernetes_server.py` (pods, nodes,
+      deployments, events, version — via **kubectl** dengan argumen fixed
+      tanpa shell; namespace divalidasi ketat; kubeconfig di-mount read-only).
+      Compose `--profile mcp` (+9103/9104/9105), seed `MCP_WAZUH_URL` /
+      `MCP_DOCKER_URL` / `MCP_KUBERNETES_URL` → tools + grant NOC otomatis.
+      Test: 28 unittest (mock httpx/socket/subprocess; dechunker, JWT retry,
+      namespace injection) + smoke e2e 5 server vs MCP client worker.
 - [ ] **F6-04** MCP server: UniFi, MikroTik, Firewall
 - [ ] **F6-05** Integrasi n8n
 - [ ] **F6-06** Tool sensitif wajib approval
@@ -537,6 +549,24 @@ visual state of the agents inside the Virtual Office.
 ## 11. Revision Log
 
 > Catat perubahan penting, keputusan yang direvisi, atau fitur baru. Terbaru di atas.
+
+### 2026-09-24 (sesi 22 — F6-03 MCP server Wazuh, Docker, Kubernetes)
+
+- **R-078** — **F6-03 selesai**: tiga server MCP read-only kembali memakai kit
+  `common.py` — Wazuh (5 tool via REST API JWT), Docker (5 tool via Docker
+  Engine API unix socket dengan HTTP minimal + dechunker sendiri — tanpa
+  dependency tambahan), Kubernetes (5 tool via kubectl).
+- **R-079** — **Keamanan eksekusi**: kubectl dipanggil dengan daftar argumen
+  fixed (tanpa shell), namespace divalidasi `[a-zA-Z0-9.-]`, binary di-resolve
+  via `shutil.which`; docker.sock di-mount read-only; semua tool tetap
+  risk=low tapi tetap lolos gate authorize F6-01 (grant + matrix) per panggilan.
+- **R-080** — **Auth Wazuh**: basic → `POST /security/user/authenticate` →
+  JWT di-cache 800 dtk; respons 401 otomatis reset token & retry sekali.
+  Kredensial dari env service, bukan dari LLM.
+- **R-081** — Test 28 unittest (nambah Wazuh JWT cache/retry, Docker dechunk
+  + shape, Kubernetes validasi namespace & ready count) + smoke e2e kini
+  mencakup 5 server MCP (F6-02+F6-03) melawan MCP client worker, termasuk
+  jalur upstream-down → `isError` yang rapi (bukan crash).
 
 ### 2026-09-24 (sesi 21 — F6-02 MCP server Prometheus & Grafana)
 

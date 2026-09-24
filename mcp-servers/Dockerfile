@@ -14,7 +14,7 @@ RUN apt-get update \
 
 RUN pip install --no-cache-dir "httpx>=0.27,<1.0"
 
-COPY common.py prometheus_server.py grafana_server.py ./
+COPY common.py prometheus_server.py grafana_server.py wazuh_server.py docker_server.py kubernetes_server.py ./
 
 # Jalankan sebagai non-root
 RUN useradd -m -u 1001 mcp && chown -R mcp:mcp /app

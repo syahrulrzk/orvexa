@@ -100,6 +100,147 @@ class TestPrometheusTools(unittest.TestCase):
             self.assertEqual(schema.get("type"), "object", schema_name)
 
 
+class TestWazuhTools(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mod = _load("wazuh_server_test", "wazuh_server.py")
+        self.mod._TOKEN = None  # reset cache token antar test
+
+    def test_token_cached(self) -> None:
+        fake = FakeResponse(200, {"data": {"token": "jwt-abc"}})
+        with mock.patch.object(self.mod.httpx, "post", return_value=fake) as m:
+            tok1 = self.mod._get_token()
+            tok2 = self.mod._get_token()
+        self.assertEqual(tok1, "jwt-abc")
+        self.assertEqual(tok2, "jwt-abc")
+        self.assertEqual(m.call_count, 1)  # kedua panggilan pakai cache
+
+    def test_agents_shape(self) -> None:
+        fake_auth = FakeResponse(200, {"data": {"token": "jwt-abc"}})
+        fake = FakeResponse(200, {"data": {"affected_items": [
+            {"id": "001", "name": "web01", "status": "active", "os": {"name": "Ubuntu"}, "ip": "10.0.0.5"},
+        ], "total_affected_items": 1}})
+        def fake_get(url, **kw):
+            return fake_auth if "/security" in url else fake
+        with mock.patch.object(self.mod.httpx, "post", return_value=fake_auth), \
+             mock.patch.object(self.mod.httpx, "get", side_effect=fake_get):
+            out = self.mod.tool_agents({"status": "active"})
+        self.assertEqual(out["count"], 1)
+        self.assertEqual(out["agents"][0]["name"], "web01")
+
+    def test_vulnerabilities_requires_agent(self) -> None:
+        with self.assertRaises(McpToolError):
+            self.mod.tool_vulnerabilities({})
+
+    def test_401_retries_with_new_token(self) -> None:
+        fake_auth = FakeResponse(200, {"data": {"token": "jwt-new"}})
+        calls = {"get": 0}
+        def fake_get(url, **kw):
+            calls["get"] += 1
+            if calls["get"] == 1:
+                return FakeResponse(401, {}, text="unauthorized")
+            return FakeResponse(200, {"data": {"agent_status": {"active": 3}, "total_agents": 3}})
+        with mock.patch.object(self.mod.httpx, "post", return_value=fake_auth), \
+             mock.patch.object(self.mod.httpx, "get", side_effect=fake_get):
+            out = self.mod.tool_agent_summary({})
+        self.assertEqual(out["active"], 3)
+        self.assertEqual(calls["get"], 2)
+
+    def test_seed_catalog_matches_handlers(self) -> None:
+        names = {s["tool_name"] for s in self.mod.SEED_TOOLS}
+        self.assertEqual(names, set(self.mod.HANDLERS.keys()))
+        kit_names = {t.name for t in self.mod.kit.tools}
+        self.assertEqual(names, kit_names)
+
+
+class TestDockerTools(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mod = _load("docker_server_test", "docker_server.py")
+
+    def test_containers_shape(self) -> None:
+        items = [
+            {"Id": "abc123def456", "Names": ["/orvexa-web"], "Image": "orvexa-web", "State": "running", "Status": "Up 2 hours"},
+            {"Id": "xyz789", "Names": ["/orvexa-worker"], "Image": "orvexa-worker", "State": "exited", "Status": "Exited (0)"},
+        ]
+        with mock.patch.object(self.mod, "_docker_request", return_value=items):
+            out = self.mod.tool_containers({})
+        self.assertEqual(out["total"], 2)
+        self.assertEqual(out["running"], 1)
+        self.assertEqual(out["containers"][0]["name"], "orvexa-web")
+        self.assertEqual(out["containers"][0]["id"], "abc123def456")
+
+    def test_inspect_requires_container(self) -> None:
+        with self.assertRaises(McpToolError):
+            self.mod.tool_inspect({})
+
+    def test_inspect_shape(self) -> None:
+        info = {
+            "Id": "a" * 64, "Name": "/orvexa-web",
+            "State": {"Status": "running", "Running": True, "Health": {"Status": "healthy"}, "RestartCount": 0},
+            "Config": {"Image": "orvexa-web:latest"},
+            "NetworkSettings": {"IPAddress": "172.20.0.5"},
+            "Mounts": [{"Source": "/data", "Destination": "/app/data", "RW": True}],
+        }
+        with mock.patch.object(self.mod, "_docker_request", return_value=info):
+            out = self.mod.tool_inspect({"container": "orvexa-web"})
+        self.assertTrue(out["running"])
+        self.assertEqual(out["health"], "healthy")
+        self.assertEqual(out["ip"], "172.20.0.5")
+
+    def test_dechunk(self) -> None:
+        # format chunked: <size-hex>\r\n<data>\r\n ... 0\r\n\r\n
+        self.assertEqual(self.mod._dechunk(b"4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n"), b"Wikipedia")
+
+    def test_dechunk_with_chunk_extension(self) -> None:
+        # extension di baris ukuran (setelah ';') harus diabaikan
+        self.assertEqual(self.mod._dechunk(b"4;ext=1\r\nWiki\r\n0\r\n\r\n"), b"Wiki")
+
+    def test_seed_catalog_matches_handlers(self) -> None:
+        names = {s["tool_name"] for s in self.mod.SEED_TOOLS}
+        self.assertEqual(names, set(self.mod.HANDLERS.keys()))
+        kit_names = {t.name for t in self.mod.kit.tools}
+        self.assertEqual(names, kit_names)
+
+
+class TestKubernetesTools(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mod = _load("kubernetes_server_test", "kubernetes_server.py")
+
+    def test_pods_shape(self) -> None:
+        data = {"items": [
+            {"metadata": {"name": "web-1"}, "spec": {"nodeName": "node-a"},
+             "status": {"phase": "Running", "containerStatuses": [{"ready": True, "restartCount": 2}]}},
+        ]}
+        with mock.patch.object(self.mod, "_kubectl", return_value=data) as m:
+            out = self.mod.tool_pods({"namespace": "prod"})
+        self.assertEqual(out["count"], 1)
+        self.assertEqual(out["pods"][0]["ready"], "1/1")
+        self.assertEqual(out["pods"][0]["restarts"], 2)
+        self.assertIn("prod", m.call_args.args[0])
+
+    def test_invalid_namespace_rejected(self) -> None:
+        with self.assertRaises(McpToolError):
+            self.mod.tool_pods({"namespace": "a; rm -rf /"})
+
+    def test_nodes_ready_count(self) -> None:
+        data = {"items": [
+            {"metadata": {"name": "n1", "labels": {"node-role.kubernetes.io/control-plane": ""}},
+             "status": {"conditions": [{"type": "Ready", "status": "True"}], "nodeInfo": {"kubeletVersion": "v1.30.0"}}},
+            {"metadata": {"name": "n2", "labels": {}},
+             "status": {"conditions": [{"type": "Ready", "status": "False"}], "nodeInfo": {"kubeletVersion": "v1.30.0"}}},
+        ]}
+        with mock.patch.object(self.mod, "_kubectl", return_value=data):
+            out = self.mod.tool_nodes({})
+        self.assertEqual(out["ready"], 1)
+        self.assertEqual(out["nodes"][0]["role"], "control-plane")
+        self.assertEqual(out["nodes"][1]["role"], "worker")
+
+    def test_seed_catalog_matches_handlers(self) -> None:
+        names = {s["tool_name"] for s in self.mod.SEED_TOOLS}
+        self.assertEqual(names, set(self.mod.HANDLERS.keys()))
+        kit_names = {t.name for t in self.mod.kit.tools}
+        self.assertEqual(names, kit_names)
+
+
 class TestGrafanaTools(unittest.TestCase):
     def setUp(self) -> None:
         self.mod = _load("grafana_server_test", "grafana_server.py")

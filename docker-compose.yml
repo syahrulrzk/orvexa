@@ -126,6 +126,61 @@ services:
     ports:
       - "9102:9102"
 
+  # Wazuh API (JWT) — server MCP ini yang login & cache token
+  mcp-wazuh:
+    build:
+      context: ./mcp-servers
+      dockerfile: Dockerfile
+    container_name: orvexa-mcp-wazuh
+    restart: unless-stopped
+    profiles: ["mcp"]
+    environment:
+      TZ: Asia/Jakarta
+      MCP_PORT: 9103
+      WAZUH_URL: ${WAZUH_URL:-https://localhost:55000}
+      WAZUH_USER: ${WAZUH_USER:-wazuh-wui}
+      WAZUH_PASS: ${WAZUH_PASS:-wazuh-wui}
+      WAZUH_TLS_VERIFY: ${WAZUH_TLS_VERIFY:-false}
+      MCP_BEARER_TOKEN: ${MCP_WAZUH_BEARER:-}
+    ports:
+      - "9103:9103"
+
+  # Docker Engine API via unix socket (read-only)
+  mcp-docker:
+    build:
+      context: ./mcp-servers
+      dockerfile: Dockerfile
+    container_name: orvexa-mcp-docker
+    restart: unless-stopped
+    profiles: ["mcp"]
+    environment:
+      TZ: Asia/Jakarta
+      MCP_PORT: 9104
+      DOCKER_SOCKET: /var/run/docker.sock
+      MCP_BEARER_TOKEN: ${MCP_DOCKER_BEARER:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "9104:9104"
+
+  # Kubernetes via kubectl (read-only) — mewarisi kubeconfig host
+  mcp-kubernetes:
+    build:
+      context: ./mcp-servers
+      dockerfile: Dockerfile
+    container_name: orvexa-mcp-kubernetes
+    restart: unless-stopped
+    profiles: ["mcp"]
+    environment:
+      TZ: Asia/Jakarta
+      MCP_PORT: 9105
+      KUBECONFIG: /app/kube/config
+      MCP_BEARER_TOKEN: ${MCP_K8S_BEARER:-}
+    volumes:
+      - ${KUBECONFIG_PATH:-$HOME/.kube/config}:/app/kube/config:ro
+    ports:
+      - "9105:9105"
+
   # ============================================================
   # Reverse proxy + HTTPS otomatis (opsional)
   #   docker compose --profile proxy up -d

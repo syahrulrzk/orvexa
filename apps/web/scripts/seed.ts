@@ -699,6 +699,153 @@ async function main(): Promise<void> {
     console.log("– MCP grafana dilewati (set MCP_GRAFANA_URL untuk mengaktifkan)");
   }
 
+  const mcpWazuhUrl = process.env.MCP_WAZUH_URL?.trim();
+  if (mcpWazuhUrl) {
+    await upsertMcpServer(
+      "wazuh",
+      mcpWazuhUrl,
+      [
+        {
+          toolName: "agents",
+          description: "Daftar agent Wazuh terdaftar + status.",
+          inputSchema: {
+            type: "object",
+            properties: { status: { type: "string", description: "active | disconnected | never_connected | pending" } },
+            additionalProperties: false,
+          },
+        },
+        {
+          toolName: "agent_summary",
+          description: "Ringkasan status seluruh agent Wazuh.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "vulnerabilities",
+          description: "Daftar kerentanan (CVE) per agent Wazuh.",
+          inputSchema: {
+            type: "object",
+            properties: { agent_id: { type: "string" }, severity: { type: "string" } },
+            required: ["agent_id"],
+            additionalProperties: false,
+          },
+        },
+        {
+          toolName: "rules",
+          description: "Cari aturan deteksi Wazuh (query, level, MITRE).",
+          inputSchema: {
+            type: "object",
+            properties: { query: { type: "string" } },
+            additionalProperties: false,
+          },
+        },
+        {
+          toolName: "manager_status",
+          description: "Status daemon Wazuh manager.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+      ],
+      process.env.MCP_WAZUH_BEARER?.trim() || undefined,
+    );
+    console.log(`✓ MCP wazuh server (http: ${mcpWazuhUrl}) + 5 tools + grant NOC`);
+  } else {
+    console.log("– MCP wazuh dilewati (set MCP_WAZUH_URL untuk mengaktifkan)");
+  }
+
+  const mcpDockerUrl = process.env.MCP_DOCKER_URL?.trim();
+  if (mcpDockerUrl) {
+    await upsertMcpServer(
+      "docker",
+      mcpDockerUrl,
+      [
+        {
+          toolName: "containers",
+          description: "Daftar container Docker + status (running/exited).",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "inspect",
+          description: "Detail satu container (state, health, mounts, IP).",
+          inputSchema: {
+            type: "object",
+            properties: { container: { type: "string" } },
+            required: ["container"],
+            additionalProperties: false,
+          },
+        },
+        {
+          toolName: "images",
+          description: "Daftar image Docker + ukuran.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "disk_usage",
+          description: "Ringkasan pemakaian disk Docker (images/containers/volumes).",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "version",
+          description: "Versi Docker Engine.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+      ],
+      process.env.MCP_DOCKER_BEARER?.trim() || undefined,
+    );
+    console.log(`✓ MCP docker server (http: ${mcpDockerUrl}) + 5 tools + grant NOC`);
+  } else {
+    console.log("– MCP docker dilewati (set MCP_DOCKER_URL untuk mengaktifkan)");
+  }
+
+  const mcpK8sUrl = process.env.MCP_KUBERNETES_URL?.trim();
+  if (mcpK8sUrl) {
+    await upsertMcpServer(
+      "kubernetes",
+      mcpK8sUrl,
+      [
+        {
+          toolName: "pods",
+          description: "Daftar pod Kubernetes per namespace + status/ready/restarts.",
+          inputSchema: {
+            type: "object",
+            properties: { namespace: { type: "string" } },
+            additionalProperties: false,
+          },
+        },
+        {
+          toolName: "nodes",
+          description: "Daftar node cluster + kondisi Ready.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        {
+          toolName: "deployments",
+          description: "Daftar deployment + replica ready per namespace.",
+          inputSchema: {
+            type: "object",
+            properties: { namespace: { type: "string" } },
+            additionalProperties: false,
+          },
+        },
+        {
+          toolName: "events",
+          description: "Event Kubernetes terakhir per namespace.",
+          inputSchema: {
+            type: "object",
+            properties: { namespace: { type: "string" } },
+            additionalProperties: false,
+          },
+        },
+        {
+          toolName: "version",
+          description: "Versi client & server Kubernetes.",
+          inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        },
+      ],
+      process.env.MCP_K8S_BEARER?.trim() || undefined,
+    );
+    console.log(`✓ MCP kubernetes server (http: ${mcpK8sUrl}) + 5 tools + grant NOC`);
+  } else {
+    console.log("– MCP kubernetes dilewati (set MCP_KUBERNETES_URL untuk mengaktifkan)");
+  }
+
   console.log("\nSeed selesai. Login dengan lead@orvexa.dev / orvexa12345");
 
   await pgClient.end();
