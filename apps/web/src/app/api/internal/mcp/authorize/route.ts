@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import {
   agentMcpAccess,
   agentPermissions,
+  approvals,
   mcpServers,
   mcpTools,
   rooms,
@@ -15,13 +16,15 @@ import { authenticateInternal } from "@/lib/internal";
 import {
   collectCredentialIds,
   evalMcpArgs,
+  evaluateMcpPermission,
   hasCredentialRef,
   mcpServerAuth,
   mcpToolKey,
   normalizeTransport,
   sanitizeMcpToolArgs,
 } from "@/lib/mcp";
-import { evaluatePermission, type AgentPermissionRow } from "@/lib/permissions";
+import { requestApproval } from "@/lib/approvals";
+import type { AgentPermissionRow } from "@/lib/permissions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,6 +59,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const agentId = typeof body.agent_id === "string" ? body.agent_id : "";
   const roomId = typeof body.room_id === "string" ? body.room_id : null;
   const runId = typeof body.run_id === "string" ? body.run_id : null;
+  const approvalId = typeof body.approval_id === "string" ? body.approval_id : null;
 
   if (!serverId || !toolName || !companyId || !agentId) {
     return apiError("VALIDATION_ERROR", "server_id, tool_name, company_id, dan agent_id wajib diisi.", 400);
@@ -71,6 +75,42 @@ export async function POST(request: Request): Promise<NextResponse> {
     .limit(1);
   if (!server || !server.isEnabled) {
     return apiError("NOT_FOUND", `Server MCP "${serverId}" tidak ditemukan / disabled.`, 404);
+  }
+  const permissionKey = mcpToolKey(server.name, toolName);
+
+  // --- 0. Jalur approval disetujui (F6-06): konsumsi SEKALI ---
+  // Worker mengirim `approval_id` pada job resume; bila approval sudah
+  // disetujui manusia dan belum dikonsumsi, authorize mengizinkan eksekusi
+  // ini dengan args persis yang diajukan, lalu menandai dikonsumsi.
+  let approvedOnce = false;
+  if (approvalId) {
+    const [approval] = await db
+      .select()
+      .from(approvals)
+      .where(and(eq(approvals.id, approvalId), eq(approvals.companyId, companyId)))
+      .limit(1);
+    const payload = (approval?.payload ?? {}) as {
+      tool_key?: string;
+      args?: Record<string, unknown>;
+      consumed_at?: string | null;
+    };
+    const consumable =
+      approval &&
+      approval.status === "approved" &&
+      approval.agentId === agentId &&
+      approval.action === permissionKey &&
+      !payload.consumed_at;
+    if (!consumable) {
+      return apiError("CONFLICT", "Approval tidak valid / sudah dikonsumsi.", 409);
+    }
+    await db
+      .update(approvals)
+      .set({
+        payload: { ...payload, consumed_at: new Date().toISOString() },
+        decisionNote: [approval.decisionNote, "dieksekusi sekali via MCP authorize"].filter(Boolean).join(" — "),
+      })
+      .where(eq(approvals.id, approvalId));
+    approvedOnce = true;
   }
 
   const [tool] = await db
@@ -125,23 +165,37 @@ export async function POST(request: Request): Promise<NextResponse> {
     projectId = room?.projectId ?? null;
   }
 
-  const permissionKey = mcpToolKey(server.name, toolName);
-  const decision = evaluatePermission(permissionKey, permRows, { roomType, projectId });
-  const needsApproval = decision.effect !== "allow" || tool.requiresApproval || ["high", "critical"].includes(tool.riskLevel);
+  // F6-06: keputusan khusus tool MCP — override `agent_permissions` menang,
+  // tanpa override → default berbasis risk level (`mcp_tools.risk_level`,
+  // `requires_approval`). Tool MCP tidak lagi di-block 403 sebagai unknown.
+  const decision = approvedOnce
+    ? ({ effect: "allow", source: "agent_override", reason: "Approval manusia (sekali eksekusi)." } as const)
+    : evaluateMcpPermission(
+        server.name,
+        toolName,
+        { riskLevel: tool.riskLevel, requiresApproval: tool.requiresApproval },
+        permRows,
+        { roomType, projectId },
+      );
 
   if (decision.effect === "disabled") {
     return apiError("FORBIDDEN", "Tool ini dinonaktifkan oleh permission matrix.", 403);
   }
-  if (needsApproval) {
-    await logActivity({
+  if (decision.effect === "approval_required") {
+    // F6-06: tool MCP sensitif masuk alur approval F5-03 penuh — baris
+    // approvals + event room + resume job setelah keputusan manusia. Eksekusi
+    // sesungguhnya TIDAK terjadi di sini; worker akan memanggil authorize lagi
+    // pada job resume dan saat itu override allow satu-kali dievaluasi lewat
+    // `evaluateMcpPermission` (override row), sehingga tetap ter-audit.
+    await requestApproval({
       companyId,
-      actor: { type: "agent", agentId },
-      action: "mcp.tool.approval_required",
-      targetType: "mcp_tool",
-      targetId: permissionKey,
+      agentId,
+      runId,
       roomId,
-      summary: `Tool MCP ${toolName} (server ${server.name}) butuh approval.`,
-      metadata: { args: sanitizeMcpToolArgs(args), server: server.name, tool: toolName, risk: tool.riskLevel },
+      toolKey: permissionKey,
+      args,
+      riskLevel: tool.riskLevel,
+      reason: `Tool MCP ${toolName} (server ${server.name}) butuh persetujuan.`,
     });
     return NextResponse.json(
       {

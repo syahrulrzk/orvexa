@@ -4,6 +4,8 @@ import { logActivity } from "./activity";
 import { db } from "./db";
 import { agents, approvals } from "./db/schema";
 import { publishRoomEvent } from "./events";
+import { isN8nEnabled, sendToN8n } from "./n8n";
+import { notifyAll } from "./notify";
 import { newId } from "./ids";
 import { enqueueAgentJob } from "./jobs";
 import { executeTool } from "./tools";
@@ -101,6 +103,33 @@ export async function requestApproval(input: {
     metadata: { tool_key: input.toolKey, run_id: input.runId ?? null },
   });
 
+  // F6-05: eskalasi ke n8n (Slack/Teams/Email via workflow) — fire & forget,
+  // kegagalan tidak memblokir alur approval.
+  if (isN8nEnabled()) {
+    void sendToN8n({
+      type: "approval.requested",
+      company_id: input.companyId,
+      room_id: input.roomId ?? null,
+      agent_id: input.agentId,
+      data: {
+        approval_id: row.id,
+        title: row.title,
+        tool_key: input.toolKey,
+        risk_level: row.riskLevel,
+        expires_at: row.expiresAt?.toISOString?.() ?? null,
+      },
+    }).catch(() => undefined);
+  }
+
+  // F6-07: notifikasi langsung ke Slack/Telegram/Email (channel terkonfigurasi).
+  void notifyAll({
+    type: "approval.requested",
+    title: `Approval diminta: ${row.title}`,
+    body: input.reason ?? `Tool ${input.toolKey} menunggu persetujuan manusia.`,
+    severity: "warning",
+    company_id: input.companyId,
+  }).catch(() => undefined);
+
   return row.id;
 }
 
@@ -161,9 +190,50 @@ export async function decideApproval(input: {
   }
 
   // ---- Jalur APPROVE: eksekusi tool SEKALI dengan override allow ----
-  const payload = (approval.payload ?? {}) as { tool_key?: string; args?: Record<string, unknown> };
+  const payload = (approval.payload ?? {}) as {
+    tool_key?: string;
+    args?: Record<string, unknown>;
+    consumed_at?: string | null;
+  };
   const toolKey = payload.tool_key ?? approval.action;
   const args = (payload.args ?? {}) as Record<string, unknown>;
+
+  // F6-06: tool MCP tidak dieksekusi di web (R-027). Approval cukup
+  // "disetujui"; eksekusi satu-kali terjadi saat worker memanggil
+  // /api/internal/mcp/authorize dengan approval_id (dikuenjar via resume).
+  if (toolKey.startsWith("mcp.")) {
+    const [row] = await db
+      .update(approvals)
+      .set({
+        status: "approved",
+        decidedAt: now,
+        decidedBy: input.decidedBy,
+        decisionNote: input.note ?? null,
+      })
+      .where(eq(approvals.id, approval.id))
+      .returning();
+
+    let resumeJobId: string | null = null;
+    if (row.agentId) {
+      resumeJobId = await enqueueAgentJob({
+        companyId: row.companyId,
+        agentId: row.agentId,
+        roomId: row.roomId,
+        trigger: {
+          kind: "approval.resume",
+          approval_id: row.id,
+          decision: row.status,
+          tool_key: toolKey,
+          executed: false,
+          decided_by: input.decidedBy,
+          mcp_pending: true,
+        },
+      });
+    }
+
+    await resumeAgentAfterDecision(row);
+    return { status: "approved", resumeJobId, executed: false };
+  }
 
   let executed = false;
   let execError: string | null = null;
@@ -257,6 +327,15 @@ async function resumeAgentAfterDecision(row: typeof approvals.$inferSelect): Pro
     summary: `Approval ${row.status}: ${row.title}`,
     metadata: { tool_key: row.action, decision_note: row.decisionNote },
   });
+
+  // F6-07: kabari requester bahwa approval sudah diputuskan (fire & forget).
+  void notifyAll({
+    type: "approval.resolved",
+    title: `Approval ${row.status}: ${row.title}`,
+    body: row.decisionNote ?? null,
+    severity: row.status === "approved" ? "info" : "critical",
+    company_id: row.companyId,
+  }).catch(() => undefined);
 }
 
 // ============================================================

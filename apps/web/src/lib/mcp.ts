@@ -13,6 +13,13 @@
  */
 
 import { decryptSecret } from "./crypto";
+import {
+  evaluateCondition,
+  findOverride,
+  type AgentPermissionRow,
+  type EvalContext,
+  type PermissionEffect,
+} from "./permissions";
 
 export const MCP_TOOL_PREFIX = "mcp.";
 
@@ -264,4 +271,71 @@ export function mcpServerAuth(
   } catch {
     return null;
   }
+}
+
+// ============================================================
+// F6-06 — keputusan permission khusus tool MCP
+// ============================================================
+
+export type McpPermissionInput = {
+  riskLevel?: string;
+  requiresApproval?: boolean;
+};
+
+/**
+ * Keputusan izin untuk satu tool MCP (F6-06).
+ *
+ * Urutan:
+ *  1. Override `agent_permissions` untuk key `mcp.<server>.<tool>` → menang
+ *     (kondisi gagal / tak ter-evaluasi → fail-closed approval_required).
+ *  2. Tanpa override → default berbasis risiko (fail-closed):
+ *     risk `high`/`critical` atau `requiresApproval` → approval_required;
+ *     `low`/`medium` → allow (tool MCP bawaan Orvexa semuanya read-only).
+ *
+ * Berbeda dengan `evaluatePermission()` builtin: tool MCP tidak dikenal
+ * matrix TIDAK otomatis disabled — katalog tool ada di DB (`mcp_tools`) dan
+ * sudah lolos gate enabled + grant; default-nya mengikuti risk level.
+ */
+export function evaluateMcpPermission(
+  serverName: string,
+  toolName: string,
+  input: McpPermissionInput,
+  rows: AgentPermissionRow[] = [],
+  ctx: EvalContext = {},
+): { effect: PermissionEffect; source: "default" | "agent_override"; reason?: string } {
+  const key = mcpPermissionFor(serverName, toolName);
+  const override = findOverride(rows, key);
+  if (override) {
+    if (override.effect === "allow") {
+      const verdict = evaluateCondition(override.conditions, ctx);
+      if (verdict === false || verdict === null) {
+        return {
+          effect: "approval_required",
+          source: "agent_override",
+          reason: "Kondisi override tidak terpenuhi / tidak bisa dievaluasi (fail-closed).",
+        };
+      }
+    }
+    return { effect: override.effect, source: "agent_override", reason: "Override per agent." };
+  }
+
+  if (riskRequiresApproval(input.riskLevel ?? "low")) {
+    return {
+      effect: "approval_required",
+      source: "default",
+      reason: `Tool MCP berisiko ${input.riskLevel} wajib persetujuan manusia.`,
+    };
+  }
+  if (input.requiresApproval) {
+    return {
+      effect: "approval_required",
+      source: "default",
+      reason: "Tool MCP ditandai wajib approval.",
+    };
+  }
+  return {
+    effect: "allow",
+    source: "default",
+    reason: "Tool MCP read-only berisiko rendah.",
+  };
 }

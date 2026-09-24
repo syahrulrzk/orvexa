@@ -6,6 +6,8 @@ import { asc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { activityLogs, companies } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
+import { isN8nEnabled, sendToN8n } from "@/lib/n8n";
+import { notifyAll } from "@/lib/notify";
 import { publish } from "@/lib/redis";
 import { RATE_LIMITS, rateLimit } from "@/lib/ratelimit";
 import { readRawBody, verifyWebhookSignature, webhookSecret } from "@/lib/webhook";
@@ -99,6 +101,23 @@ export async function POST(request: Request): Promise<NextResponse> {
     labels: payload.labels ?? {},
     ts: new Date().toISOString(),
   });
+
+  // F6-07: alert kritis diteruskan ke kanal notifikasi keluar (Slack/Telegram/
+  // Email) — fire & forget, tidak memblokir respons webhook.
+  void notifyAll({
+    type: "alert",
+    title,
+    body: [severity, source].filter(Boolean).join(" · "),
+    severity: severity === "critical" || severity === "warning" ? (severity as "critical" | "warning") : "info",
+    company_id: companyId ?? null,
+  }).catch(() => undefined);
+
+  // F6-05: teruskan juga ke workflow n8n bila aktif (otomasi ops).
+  if (isN8nEnabled()) {
+    void sendToN8n({ type: "alert", company_id: companyId ?? null, data: { source, severity, title, labels: payload.labels ?? {} } }).catch(
+      () => undefined,
+    );
+  }
 
   return NextResponse.json({ data: { ok: true } }, { status: 202 });
 }
