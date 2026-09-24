@@ -60,7 +60,7 @@
 
 ---
 
-## 3. Fase 1 — Fondasi 🟡
+## 3. Fase 1 — Fondasi 🟢
 
 ### Selesai
 
