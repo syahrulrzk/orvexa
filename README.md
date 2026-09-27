@@ -1,131 +1,69 @@
-# ORVEXA — Your AI Workforce
+# ORVEXA
 
-> Platform open-source untuk mengelola **tim AI agent terspesialisasi** yang berkolaborasi di ruang real-time, dengan manusia tetap sebagai pengambil keputusan.
+SaaS untuk membantu UMKM memiliki tim karyawan AI, dengan konteks bisnis, knowledge perusahaan, divisi, tugas, dan ruang kolaborasi. UI mendukung **Bahasa Indonesia dan English**.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Status: Planning](https://img.shields.io/badge/status-planning%20%2F%20phase%201-yellow)]()
-[![Made with Next.js + Python](https://img.shields.io/badge/stack-Next.js%20%2B%20Python-9cf)]()
+**Status:** build awal yang dapat digunakan di LAN; belum production-ready. Lihat [status implementasi](docs/10-build-status.md), [tasklist](docs/TASKLIST.md), dan [dokumentasi arsitektur](docs/README.md).
 
-Orvexa memberi seorang IT Infrastructure Lead sebuah **AI Infrastructure Department**: virtual team berisi Infra Manager, SysAdmin, Network, Security, dan NOC agent yang bisa berkomunikasi, delegasi kerja, membuat task, memakai knowledge, dan menjalankan aksi yang disetujui manusia.
+## Stack
 
----
+SvelteKit + TypeScript, Bun, Better Auth, PostgreSQL/Drizzle, Redis/BullMQ, dan LangGraph JS. `bun.lock` mengunci dependency yang diuji; gunakan frozen lockfile untuk reproduksi.
 
-## ✨ Fitur Inti
+## Menjalankan secara lokal
 
-- 🗂️ **Workspace & Company** — multi-tenant dengan isolasi data (RLS).
-- 💬 **Rooms real-time** — kolaborasi human + agent (SSE, threads, mentions).
-- 🤖 **Agent otonom** — komunikasi agent-to-agent, delegasi, dan run yang bisa diaudit.
-- 🧠 **Knowledge Base & RAG** — dokumen ter-index (pgvector) dengan access control.
-- 🛡️ **Governance** — permission, approval untuk aksi sensitif, audit log, cost tracking.
-- 🔌 **Extensible** — multi provider LLM dan siap MCP (Prometheus, Wazuh, UniFi, Docker, dll).
-- 🎨 **Corporate Gray UI** — tema enterprise dengan 5 pilihan tema
+Prasyarat: Bun 1.4.0, Docker dan Docker Compose.
 
----
+1. Salin `.env.example` ke `.env`. Ganti password database, `BETTER_AUTH_SECRET` (minimal 32 karakter acak), dan `CREDENTIAL_ENCRYPTION_KEY` (64 karakter hex acak). Pastikan password dalam `DATABASE_URL` sama dengan `POSTGRES_PASSWORD`.
+2. Jalankan:
 
-## 🚀 Quickstart (Docker)
-
-```bash
-git clone https://github.com/syahrulrzk/orvexa.git
-cd orvexa
-cp .env.example .env
-
-# generate secret yang dibutuhkan (lihat .env.example)
-docker compose up --build
+```sh
+bun install --frozen-lockfile
+docker compose --env-file .env -f infra/compose.yaml up -d
+bun run db:migrate
+bun run dev
 ```
 
-Buka `http://localhost:3000`.
+3. Buka `http://localhost:5173/register`, buat akun owner, dan isi profil perusahaan. Default `.env.example` menggunakan origin development tersebut.
+4. Tambahkan knowledge dan karyawan AI. Untuk eksekusi nyata, isi API key/model di menu AI Provider lalu jalankan worker pada terminal terpisah:
 
-### Development lokal
-
-```bash
-docker compose up -d postgres redis
-npm install
-npm run db:migrate && npm run db:seed
-npm run dev            # web  → http://localhost:3000
-npm run dev:worker     # worker (terminal terpisah)
+```sh
+bun run worker
 ```
 
-Panduan lengkap: [CONTRIBUTING.md](./CONTRIBUTING.md).
+Tanpa provider, data bisnis dan antarmuka tetap bisa digunakan; permintaan menjalankan AI akan ditolak dengan pesan yang jelas. Tidak ada password administrator yang disimpan di source. Script `scripts/create-admin.ts` digunakan untuk provisioning administrator lokal, menghasilkan password acak hanya saat akun belum ada.
 
----
+## Preview LAN pada server ini
 
-## 🏗️ Arsitektur (ringkas)
+Alamat: `http://172.16.19.235:3000/login`.
 
-```text
-User ──HTTPS/SSE──▶ Next.js 16 (UI + BFF + Auth)
-                        │
-         ┌──────────────┼───────────────┐
-         ▼              ▼               ▼
-   PostgreSQL 16    Redis 7        n8n (opsional)
-   + pgvector    Streams+PubSub
-         ▲              │
-         │              ▼
-         └──── Python Agent Runtime (LLM, tools, RAG, MCP)
+```sh
+bun run build
+bash scripts/serve.sh
 ```
 
-- **Next.js** → UI, API/BFF, auth, SSE gateway.
-- **Python worker** → agent loop, provider LLM, tool & MCP, RAG.
-- **PostgreSQL + pgvector** → source of truth & vector search.
-- **Redis** → job queue (Streams) + event bus (Pub/Sub).
+`serve.sh` menargetkan IP/port LAN server ini. Set `APP_ORIGIN` di `.env` ke alamat LAN yang sama. Untuk host lain, sesuaikan `ORIGIN`, `HOST`, dan `PORT` pada launcher. `.env`, runtime logs, dan hasil tes tidak masuk Git.
 
-Detail: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+Preview belum memakai service manager dan tidak dijamin otomatis hidup setelah reboot. Mode production publik memerlukan pekerjaan lanjutan pada [tasklist](docs/TASKLIST.md).
 
-**Timezone:** seluruh sistem memakai **Asia/Jakarta (WIB)** — lihat [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) §10.4.
+## Validasi
 
----
-
-## 🧰 Stack
-
-| Layer | Teknologi |
-|---|---|
-| Frontend + BFF | Next.js 16 (Turbopack), React 19, TypeScript, Tailwind v4, shadcn/ui |
-| Agent Runtime | Python 3.12 |
-| Database | PostgreSQL 16 + pgvector |
-| Queue/Realtime | Redis 7, SSE |
-| Auth | Auth.js |
-| Migrasi | Drizzle ORM + Drizzle Kit |
-| Automation | n8n (opsional) |
-| Tool Protocol | MCP (roadmap) |
-
----
-
-## 📚 Dokumentasi
-
-| Dokumen | Isi |
-|---|---|
-| [PRD](./ORVEXA_Final_PRD_v1.0.md) | Product Requirements Document |
-| [Architecture](./docs/ARCHITECTURE.md) | Arsitektur & alur sistem |
-| [Database Schema](./docs/DATABASE_SCHEMA.md) | DDL, RLS, ERD |
-| [Security](./docs/SECURITY.md) | Keamanan & governance |
-| [Design](./docs/DESIGN.md) | Design system Corporate Gray |
-| [API Spec](./docs/API_SPEC.md) | Kontrak REST & event |
-| [Tasklist](./TASKLIST.md) | Progres & backlog |
-
----
-
-## 🗺️ Roadmap
-
-```text
-Fase 1  Fondasi        — Auth, workspace, UI, agent config
-Fase 2  Kolaborasi     — Rooms, realtime, threads
-Fase 3  AI Infra Team  — 5 agent infrastruktur
-Fase 4  Intelligence   — Delegasi, tasks, memory, knowledge
-Fase 5  Governance     — Permission, approval, audit, cost
-Fase 6  Integrations   — n8n, Prometheus, Wazuh, UniFi, Docker, MCP
+```sh
+bun run check
+bun run test
+bun run test:integration
+bun run build
+bunx playwright install chromium
+E2E_BASE_URL=http://172.16.19.235:3000 bunx playwright test
 ```
 
-Status detail: [TASKLIST.md](./TASKLIST.md).
+Tes integrasi membutuhkan database hasil migrasi dan Redis lokal. Respons model menggunakan stub tanpa biaya API. Browser test membuat akun dan workspace fixture berlabel `Test Owner` dengan email `e2e-…@example.test`; fixture browser belum dibersihkan otomatis. Jalankan di lingkungan pengujian.
 
----
+## Struktur
 
-## 🤝 Kontribusi
-
-Kontribusi sangat diterima! Baca [CONTRIBUTING.md](./CONTRIBUTING.md) dulu.
-
-Untuk kerentanan keamanan, **jangan** buka issue publik — ikuti [SECURITY.md](./SECURITY.md).
-
----
-
-## 📄 Lisensi
-
-[MIT](./LICENSE) © 2026 Orvexa contributors.
+- `apps/web`: web, auth, server API, dan SSE.
+- `apps/worker`: antrean, dispatch dan jadwal.
+- `packages/core`: database, validasi, layanan domain, enkripsi dan graph agent.
+- `scripts`: schema/migrasi, provisioning admin dan launcher LAN.
+- `infra`: Compose PostgreSQL/Redis.
+- `tests`: unit, integrasi dan browser.
+- `Menu Picture`: 18 PNG referensi desain.
+- `docs`: kebutuhan, roadmap, tasklist dan status aktual.

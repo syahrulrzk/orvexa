@@ -1,16 +1,8 @@
 node_modules
 **/node_modules
-.next
-**/.next
-.git
+**/.svelte-kit
+**/build
 .env
-.env.local
-*.log
-dist
-coverage
-worker/.venv
-worker/__pycache__
-**/__pycache__
-docs
-*.md
-!README.md
+.git
+Menu Picture
+test-results

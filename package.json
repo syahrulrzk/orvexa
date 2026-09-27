@@ -1,29 +1,34 @@
 {
   "name": "orvexa",
-  "version": "0.1.0",
   "private": true,
-  "description": "Orvexa — Your AI Workforce. Open-source AI agent collaboration platform.",
-  "license": "MIT",
-  "workspaces": [
-    "apps/web",
-    "packages/*"
-  ],
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "dev": "npm run dev -w apps/web",
-    "build": "npm run build -w apps/web",
-    "start": "npm run start -w apps/web",
-    "lint": "npm run lint -w apps/web",
-    "typecheck": "npm run typecheck -w apps/web",
-    "db:generate": "npm run db:generate -w apps/web",
-    "db:migrate": "npm run db:migrate -w apps/web",
-    "db:studio": "npm run db:studio -w apps/web",
-    "db:seed": "npm run db:seed -w apps/web",
-    "dev:worker": "cd worker && python main.py"
-  },
-  "engines": {
-    "node": ">=22"
+    "dev": "bun --env-file=.env run --cwd apps/web dev --host 127.0.0.1",
+    "build": "bun run --cwd apps/web build",
+    "check": "bun run --cwd apps/web check && tsc --noEmit -p tsconfig.worker.json",
+    "db:migrate": "bun --env-file=.env scripts/migrate.ts",
+    "worker": "bun --env-file=.env apps/worker/src/index.ts",
+    "test": "bun test tests/unit.test.ts",
+    "test:integration": "bun --env-file=.env test tests/integration.test.ts"
   },
   "dependencies": {
-    "lucide-react": "^1.47.0"
+    "@langchain/core": "latest",
+    "@langchain/langgraph": "latest",
+    "@langchain/langgraph-checkpoint-postgres": "latest",
+    "better-auth": "latest",
+    "bullmq": "latest",
+    "drizzle-orm": "latest",
+    "ioredis": "^6.0.0",
+    "pg": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@playwright/test": "latest",
+    "@types/bun": "latest",
+    "@types/pg": "latest",
+    "prettier": "^3.9.9",
+    "prettier-plugin-svelte": "^4.1.1",
+    "typescript": "~6.0.0"
   }
 }

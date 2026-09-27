@@ -1,68 +1,54 @@
-# ORVEXA — Dokumentasi Teknis
+# Dokumentasi ORVEXA
 
-**Orvexa — Your AI Workforce.**
-Platform kolaborasi AI workforce enterprise: sekumpulan AI agent terspesialisasi yang bekerja bersama di ruang kolaborasi real-time, dengan manusia tetap sebagai pengambil keputusan.
+Tanggal baseline: 27 September 2026. Status: roadmap v0.2 dengan build awal tersedia; lihat status aktual di bawah.
 
-> Dokumen produk utama: [`../ORVEXA_Final_PRD_v1.0.md`](../ORVEXA_Final_PRD_v1.0.md)
-> Progres & backlog: [`../TASKLIST.md`](../TASKLIST.md)
+Dokumen ini membedakan keputusan arah teknologi, usulan implementasi, dan pertanyaan produk. Draft ini belum merupakan bukti bahwa integrasi stack telah diuji.
 
----
+**Pantau progres implementasi di [Tasklist ORVEXA](TASKLIST.md)**: status per pekerjaan, dependensi, kriteria selesai, dan log progres.
 
-## Daftar Dokumen
+**Kondisi aplikasi saat ini:** [Status build v0.1](10-build-status.md). Target pengguna adalah UMKM dengan fondasi perusahaan umum dan UI Indonesia/English.
 
-| Dokumen | Isi | Untuk siapa |
+## Urutan baca
+
+1. [Kebutuhan produk dan ruang lingkup](01-product-requirements.md)
+2. [Alur pengguna dan spesifikasi UI](02-user-flows-and-ui.md)
+3. [Stack dan arsitektur](03-architecture.md)
+4. [Model data dan akses](04-data-model.md)
+5. [Kontrak API dan event](05-api-and-events.md)
+6. [Eksekusi agent dan approval](06-agent-execution.md)
+7. [Tahapan implementasi dan validasi](07-delivery-plan.md)
+8. [Deployment dan operasi](08-operations.md)
+9. [Perusahaan AI autonomous](09-autonomous-company.md)
+10. [Status implementasi aktual](10-build-status.md)
+
+## Keputusan dan asumsi
+
+| Topik | Status | Baseline |
 |---|---|---|
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | Stack, pembagian service, alur data, job/event contract, deployment, ADR | Engineer, kontributor |
-| [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) | DDL lengkap PostgreSQL + pgvector, RLS, ERD, migrasi, retention | Backend engineer |
-| [SECURITY.md](./SECURITY.md) | Threat model, auth, RBAC/ABAC, enkripsi kredensial, isolasi agent, approval, audit | Security, maintainer |
-| [DESIGN.md](./DESIGN.md) | Design system Corporate Gray, token, tema, komponen, layout, a11y | Frontend, designer |
+| Referensi UI | Tersedia | 18 PNG dalam `Menu Picture/`; 5 halaman telah ditinjau visual |
+| Bahasa aplikasi | Arah disepakati | TypeScript untuk web, API, dan worker |
+| Framework web | Arah pembahasan | SvelteKit |
+| Runtime | Target, perlu validasi | Bun; Node.js menjadi fallback jika dependency tidak kompatibel |
+| Orkestrasi AI | Target, perlu validasi | LangGraph JS di worker terpisah |
+| Infrastruktur | Diketahui dari pengguna | Ubuntu dan Docker tersedia; spesifikasi belum diperiksa |
+| Arah produk | Dikonfirmasi pengguna | Virtual office autonomous; owner manusia dan karyawan AI dalam banyak divisi |
+| Model tenancy | Asumsi | Banyak workspace dengan isolasi data sejak awal |
+| Penyedia model | Asumsi MVP | API provider eksternal; model lokal belum masuk baseline |
+| Eksekusi tools | Asumsi MVP | Tools terdaftar dan dibatasi; tidak ada akses shell umum |
+| Auth | Usulan belum dipilih | Library auth terpelihara; hindari membangun kriptografi/session sendiri |
+| Pembayaran | Belum ditentukan | Di luar MVP; pencatatan biaya AI tetap masuk MVP |
 
----
+## Pertanyaan terbuka
 
-## Ringkasan Keputusan Arsitektur
+- Peluncuran pertama untuk satu perusahaan atau pelanggan SaaS publik?
+- Apa satu pekerjaan nyata agent yang harus berhasil pada MVP?
+- Berapa CPU, RAM, disk, kapasitas pengguna, dan jumlah agent berjalan bersamaan?
+- Provider/model apa yang dipakai dan apakah credential milik platform atau masing-masing workspace?
+- Metode login, kebutuhan SSO, domain aplikasi, dan email delivery?
+- Target retensi data, backup, waktu pemulihan, dan kebutuhan penyimpanan dokumen?
 
-```text
-Stack        : Hybrid — Next.js 16 (web + BFF) + Python worker (agent runtime)
-ORM/Migrasi  : Drizzle ORM + Drizzle Kit (schema-as-code)
-Database     : PostgreSQL 16 + pgvector (self-host via Docker Compose)
-Queue/Event  : Redis 7 (Streams + Pub/Sub)
-Realtime     : SSE (server→client) + HTTP POST (client→server)
-Auth         : Auth.js (RBAC) + session server-side
-Secrets      : AES-256-GCM at rest, tidak pernah ke browser
-Automation   : n8n (opsional)
-Tool protocol: MCP (roadmap fase 6)
-Docs bahasa  : Indonesia
-```
+Pertanyaan ini tidak menghalangi rancangan awal. Jawabannya harus dicatat sebelum komponen terkait diimplementasikan atau deployment produksi dilakukan.
 
-### Aliran data inti
+## Aturan pemeliharaan
 
-```text
-User → Next.js (validasi + persist + publish)
-     → Redis (Streams job, Pub/Sub event)
-     → Python worker (agent loop, LLM, tool, RAG)
-     → PostgreSQL (source of truth)
-     → SSE → Browser (streaming realtime)
-```
-
----
-
-## Cara Baca
-
-- **Baru di project?** Mulai dari [ARCHITECTURE.md](./ARCHITECTURE.md) §1–4, lalu [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) §3–6.
-- **Mau kontribusi frontend?** [DESIGN.md](./DESIGN.md).
-- **Mau kontribusi worker/AI?** [ARCHITECTURE.md](./ARCHITECTURE.md) §8–9.
-- **Mau audit keamanan?** [SECURITY.md](./SECURITY.md).
-- **Mau setup lokal?** Lihat roadmap deployment di [ARCHITECTURE.md](./ARCHITECTURE.md) §10.
-
----
-
-## Roadmap MVP (dari PRD §46)
-
-```text
-Fase 1  Fondasi      — Auth, workspace, UI, agent config
-Fase 2  Kolaborasi   — Rooms, realtime, threads, status
-Fase 3  AI Infra     — Infra Manager, SysAdmin, Network, Security, NOC
-Fase 4  Intelligence — Delegasi, tasks, memory, knowledge, decisions
-Fase 5  Governance   — Permission, approval, audit, cost tracking
-Fase 6  Integrations — n8n, Prometheus, Grafana, Wazuh, UniFi, Docker, MCP
-```
+Perubahan perilaku aplikasi harus memperbarui dokumen terkait. Setiap keputusan besar dicatat di bagian keputusan arsitektur dengan alasan dan konsekuensinya. Versi dependency dipilih dan dikunci setelah compatibility spike; tidak memakai tag `latest` untuk deployment produksi.
