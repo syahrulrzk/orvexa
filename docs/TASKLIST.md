@@ -1,29 +1,29 @@
 # Tasklist ORVEXA
 
-Terakhir diperbarui: 27 September 2026.
+Terakhir diperbarui: 28 September 2026.
 
 ## Posisi sekarang
 
-**Tahap saat ini: build awal dapat digunakan di LAN.** Web production berjalan dengan Bun pada `http://172.16.19.235:3000`. Login owner, onboarding perusahaan, Company Knowledge, data agent/divisi/proyek/tugas, dan antarmuka Indonesia/English tersedia. Target MVP penuh belum selesai.
+**Tahap saat ini: build awal dapat digunakan di LAN.** Web lokal yang tadi dipakai untuk development sudah dihentikan; port 3000 tertutup. PostgreSQL dan Redis lokal tetap berjalan. Login owner, onboarding perusahaan, Company Knowledge, data agent/divisi/proyek/tugas, dan antarmuka Indonesia/English tersedia. Target MVP penuh belum selesai.
 
 Bukti dan batas implementasi: [Status build v0.1](10-build-status.md). Akun administrator sudah dibuat di database lokal; password dan credential tidak disimpan di repository.
 
 | Kelompok | DONE / total | Kondisi |
 |---|---|---|
 | Persiapan dokumentasi | 4 / 4 | Draft tersedia; keputusan produk belum final |
-| Persiapan build — fase 0 | 1 / 8 | Sebagian diimplementasikan; validasi provider nyata belum selesai |
+| Persiapan build — fase 0 | 4 / 8 | Validasi provider nyata menunggu izin live call |
 | Fondasi — fase 1 | 1 / 7 | Auth dan UI tersedia; masih ada review/hardening |
 | Fitur pekerjaan — fase 2 | 1 / 5 | CRUD dasar tersedia; lifecycle lengkap belum selesai |
-| Eksekusi agent — fase 3 | 0 / 8 | Backend dasar diuji model stub; scope penuh belum selesai |
+| Eksekusi agent — fase 3 | 1 / 8 | Backend dasar diuji model stub; scope penuh belum selesai |
 | Perusahaan autonomous — fase 3B | 0 / 8 | Kolaborasi terbatas dan jadwal interval tersedia |
 | Monitoring — fase 4 | 0 / 4 | UI/event/token dasar tersedia |
 | Kesiapan produksi — fase 5 | 0 / 6 | Preview LAN; belum production-ready |
 | Fondasi bisnis UMKM — tambahan scope | 3 / 3 | DONE, sesuai scope dasar pada baris BIZ |
 | Pengembangan lanjutan | 0 / 9 | BACKLOG, di luar MVP |
 
-**Implementasi MVP: 6 / 49 task selesai penuh.** Angka ini menghitung task fase 0–5 dan BIZ-01–03, bukan persentase usaha atau estimasi waktu. Ukuran setiap task berbeda.
+**Implementasi MVP: 10 / 49 task selesai penuh.** Angka ini menghitung task fase 0–5 dan BIZ-01–03, bukan persentase usaha atau estimasi waktu. Ukuran setiap task berbeda.
 
-**Fokus saat ini:** merapikan handoff build, memperbarui tracker, dan push GitHub. **Berikutnya:** validasi AI provider nyata (PRE-07), penyelesaian fondasi/auth, serta packaging dan auto-start web/worker. Status IN_PROGRESS berarti implementasi parsial, bukan semua task dikerjakan bersamaan.
+**Fokus saat ini:** menyelesaikan task berstatus IN_PROGRESS sebelum mengambil TODO. AGT-01, PRE-01, PRE-02, dan PRE-08 selesai. PRE-07 diblokir sampai owner mengizinkan smoke test OpenAI. FND-02 masih IN_PROGRESS; browser run berhenti saat signup dan logout/origin assertions belum tercapai. Status IN_PROGRESS berarti implementasi parsial, bukan semua task dikerjakan bersamaan.
 
 ## Cara memakai tracker
 
@@ -54,21 +54,21 @@ DOC-01 tidak berarti seluruh detail 18 halaman sudah ditinjau. Review lanjutan a
 
 | ID | Status | Pekerjaan | Dependensi | Kriteria selesai | PIC / bukti / hambatan |
 |---|---|---|---|---|---|
-| PRE-01 | IN_PROGRESS | Tetapkan scope peluncuran dan skenario agent pertama | DOC-02 | Target internal/publik, alur pekerjaan nyata, tools, provider, kepemilikan key, serta batas MVP dicatat | Codex — Arah SaaS umum untuk UMKM dan bilingual dikonfirmasi; use case bisnis serta provider/model pertama belum dipilih. |
-| PRE-02 | IN_PROGRESS | Audit server dan toolchain | — | CPU/RAM/disk, OS, Docker/Compose, port terpakai, Bun/Node dan layanan existing dicatat tanpa membocorkan secret | Codex — Bun 1.4.0, Node 22.17.1, Docker 29.6.1, Compose 2.40.3, RAM ~9.5 GiB diperiksa. Audit kapasitas/port lengkap belum selesai. |
+| PRE-01 | DONE | Tetapkan scope peluncuran dan skenario agent pertama | DOC-02 | Target internal/publik, alur pekerjaan nyata, tools, provider, kepemilikan key, serta batas MVP dicatat | Codex — Owner memilih preview internal LAN, use case merangkum Company Knowledge terbit menjadi rencana kerja teks untuk ditinjau manusia, provider OpenAI dengan key milik platform. Tidak ada aksi/tool eksternal pada skenario awal. |
+| PRE-02 | DONE | Audit server dan toolchain | — | CPU/RAM/disk, OS, Docker/Compose, port terpakai, Bun/Node dan layanan existing dicatat tanpa membocorkan secret | Codex — Ubuntu 24.04.4, kernel 6.8.0, Xeon Silver 4208 (14 vCPU), RAM 9.5 GiB (3.5 GiB tersedia), swap 8 GiB, disk 156 GiB (38 GiB tersedia, 75% terpakai); Bun 1.4.0, Node 22.17.1, Docker 29.6.1, Compose 2.40.3. PostgreSQL/Redis ORVEXA sehat di localhost; Vite dev sempat memakai port 3000, sekarang sudah dihentikan; port 6379/3100/3306/80 dan layanan existing dicatat via `docker ps`/`ss`. |
 | PRE-03 | TODO | Review 13 PNG tersisa dan finalisasi spesifikasi MVP | DOC-01, PRE-01 | UI states, aksi utama, komponen bersama, dan penyimpangan dari PNG dicatat; semua PNG terinventarisasi ditinjau | — |
 | PRE-04 | DONE | Scaffold monorepo TypeScript | PRE-01, PRE-02 | Web, worker, shared packages, scripts, environment validation dan lockfile tersedia; typecheck/build dasar lulus | Codex — apps/web, apps/worker, packages/core, bun.lock, config validation, scripts tersedia; typecheck dan production build lulus. |
 | PRE-05 | IN_PROGRESS | Uji SvelteKit dengan runtime Bun di Docker | PRE-04 | Build, server adapter, endpoint, SSE, serta shutdown berjalan pada image target; keputusan runtime dicatat | Codex — SvelteKit adapter-node berjalan dengan Bun di LAN; build dan browser E2E lulus. Container web/worker dan shutdown/recovery belum diuji. |
 | PRE-06 | IN_PROGRESS | Uji PostgreSQL, Drizzle, Redis dan BullMQ | PRE-04 | Migrasi, koneksi, enqueue/consume, duplicate job, restart dan shutdown diuji; versi dikunci | Codex — PostgreSQL/Redis di Docker, Drizzle read, migrasi dan queue integration lulus. Restart Redis/shutdown menyeluruh belum diuji. |
-| PRE-07 | IN_PROGRESS | Uji LangGraph dan provider di worker | PRE-01, PRE-06 | Graph, checkpoint persisten, interrupt/resume, restart dan provider smoke test berhasil; hasil kompatibilitas Bun/fallback dicatat | Codex — LangGraph PostgreSQL checkpoint, multi-agent, interrupt/resume lulus dengan model stub. Provider nyata belum diuji; API key/model perlu diisi melalui UI. |
-| PRE-08 | IN_PROGRESS | Pilih auth dan tetapkan akses | PRE-01, PRE-05 | Library/metode login, invitation/email, role, permission approval, serta kompatibilitas dibuktikan dan didokumentasikan | Codex — Better Auth dipilih; login email/password tersedia. Email verification/reset, invitation/email delivery dan policy lengkap belum tersedia. |
+| PRE-07 | BLOCKED | Uji LangGraph dan provider di worker | PRE-01, PRE-06 | Graph, checkpoint persisten, interrupt/resume, restart dan provider smoke test berhasil; hasil kompatibilitas Bun/fallback dicatat | Codex — Graph/checkpoint/interrupt/resume terbukti dengan model stub. Smoke test OpenAI live menunggu izin owner; owner memilih belum boleh dipanggil. |
+| PRE-08 | DONE | Pilih auth dan tetapkan akses | PRE-01, PRE-05 | Library/metode login, invitation/email, role, permission approval, serta kompatibilitas dibuktikan dan didokumentasikan | Codex — Better Auth email/password (minimum 10 karakter), trusted origins dan rate limit dipilih; kompatibilitas Bun/SvelteKit terbukti. Preview LAN memakai signup owner. Verifikasi email/reset dan undangan/email delivery sengaja di luar scope preview; role workspace mengikuti owner/admin/member/viewer dan approval hanya admin. Skenario awal tidak menjalankan tool/aksi eksternal. |
 
 ## Fase 1 — Fondasi aplikasi
 
 | ID | Status | Pekerjaan | Dependensi | Kriteria selesai | PIC / bukti / hambatan |
 |---|---|---|---|---|---|
 | FND-01 | IN_PROGRESS | Schema domain dan migrasi awal | PRE-06, PRE-08 | Tabel MVP, constraint tenant, index, serta migrasi database bersih diuji | Codex — Schema SQL idempotent, FK tenant dan unique active run tersedia; sebagian entitas memakai JSONB tervalidasi. Belum seluruh schema MVP/riwayat migrasi versioned. |
-| FND-02 | REVIEW | Login, logout dan session | PRE-08, FND-01 | Session lifecycle, validasi, CSRF/origin dan route protection diuji | Codex — Signup/login/session dan route protection berjalan di browser. Logout tersedia; tes logout, expiry, CSRF dan hardening publik perlu dilengkapi. |
+| FND-02 | IN_PROGRESS | Login, logout dan session | PRE-08, FND-01 | Session lifecycle, validasi, CSRF/origin dan route protection diuji | Codex — Signup/login dan route protection tersedia. Browser run terbaru tertahan di `/register` dan tidak mencapai onboarding; assertion logout, origin asing, dan route sesudah logout belum berjalan. Penyebab signup belum terdiagnosis; user akan memeriksa. |
 | FND-03 | DONE | Workspace dan isolasi tenant | FND-02 | Create/switch workspace dan membership check bekerja; akses silang tenant ditolak lewat tes integrasi | Codex — Create workspace, switch workspace dan membership guard tersedia; tes integrasi menolak read/referensi lintas tenant. Role ownership dibuat saat onboarding. |
 | FND-04 | TODO | Members, invitation dan role | FND-03 | Undang/terima undangan, expiry, ubah role, cabut akses dan perlindungan owner terakhir bekerja | — |
 | FND-05 | IN_PROGRESS | App shell dan komponen UI bersama | PRE-03, PRE-05 | Sidebar/header/responsive layout, form, table, dialog dan state loading/error/empty tersedia dan ditinjau | Codex — App shell responsif, form/dialog native, table, Kanban, empty/error state tersedia; browser mobile lulus. Review seluruh PNG dan aksesibilitas menyeluruh belum selesai. |
@@ -89,7 +89,7 @@ DOC-01 tidak berarti seluruh detail 18 halaman sudah ditinjau. Review lanjutan a
 
 | ID | Status | Pekerjaan | Dependensi | Kriteria selesai | PIC / bukti / hambatan |
 |---|---|---|---|---|---|
-| AGT-01 | IN_PROGRESS | Run lifecycle dan snapshot | APP-02, APP-04 | Create/read run, snapshot konfigurasi, idempotency request dan satu run aktif per task diuji | Codex — Snapshot, read/create run dan satu run aktif per task diuji. Idempotency-Key HTTP lintas run terminal belum diimplementasikan. |
+| AGT-01 | DONE | Run lifecycle dan snapshot | APP-02, APP-04 | Create/read run, snapshot konfigurasi, idempotency request dan satu run aktif per task diuji | Codex — Snapshot/create/read, satu run aktif per task, replay key run aktif/terminal, serta isolasi workspace diuji. HTTP mengembalikan `Idempotency-Key` dan `Location`; integration 11/11, `bun run check` bersih, verifikasi HTTP lokal lulus. |
 | AGT-02 | IN_PROGRESS | Outbox, dispatch dan worker claim | AGT-01, PRE-06 | Transaksi outbox, publish ulang, claim/fencing dan duplicate delivery tidak membuat eksekusi paralel run sama | Codex — Outbox, dispatcher, advisory lock per run dan queue tersedia. Failure injection publish ulang/fencing dan recovery lintas proses belum lengkap. |
 | AGT-03 | IN_PROGRESS | Graph pekerjaan agent pertama | AGT-02, PRE-07 | Context → plan → validate → tool → evaluate → finalize berjalan dengan checkpoint dan graph version | Codex — Graph brief → hingga dua specialist → final result, checkpoint dan snapshot version 1 berjalan dalam tes. Tool execution nyata dan graph migration belum tersedia. |
 | AGT-04 | TODO | Tool registry dan perlindungan side effect | AGT-03 | Schema, allowlist, timeout, action key dan rekonsiliasi hasil ambigu diuji | — |
@@ -168,6 +168,11 @@ Semua baris memerlukan scope, model data, UI review, dan acceptance criteria sen
 | 2026-09-27 | BIZ-01–03, PRE-04, FND-03, APP-05 | DONE | Build dasar berjalan di LAN; 4 unit + 9 integration + 1 browser E2E lulus; Svelte/TypeScript 0 error/warning; build production lulus. Scope MVP bertambah 46 → 49. |
 | 2026-09-27 | Task implementasi lain | IN_PROGRESS / REVIEW | Status parsial diperinci per baris; provider nyata, full autonomy dan production deployment belum diklaim selesai. |
 
-| 2026-09-27 | Handoff repository | Siap dipublikasikan | Owner meminta isi repo lama diganti. Snapshot build dan tracker disiapkan sebagai commit baru pada main; secret/runtime tidak disertakan. |
+| 2026-09-27 | AGT-01 (parsial) | Idempotency-Key start run | Kolom `runs.idempotency_key` + unique index parsial per workspace; header/body `Idempotency-Key` di API, UI kirim UUID per klik Run. Bukti: 11 integration (2 baru), 4 unit, svelte-check 0 error, build production lulus. Sisa AGT-01: response header dan review. |
+| 2026-09-28 | AGT-01 | IN_PROGRESS → DONE | HTTP echo/replay `Idempotency-Key` dan `Location` terverifikasi; `bun run test:integration` 11/11 lulus, `bun run check` 0 error/warning, verifikasi HTTP lokal 9 assertion lulus. |
+| 2026-09-28 | PRE-02 | IN_PROGRESS → DONE | Audit OS, CPU, RAM, swap, disk, Bun/Node, Docker/Compose, container, dan port listener selesai; detail dicatat pada baris task. |
+| 2026-09-28 | PRE-01 | IN_PROGRESS → DONE | Owner memilih target internal LAN, use case peringkasan Company Knowledge menjadi rencana teks, OpenAI, dan key milik platform; skenario awal tanpa aksi eksternal dicatat pada baris task. |
+| 2026-09-28 | PRE-08 | IN_PROGRESS → DONE | Better Auth, metode signup/login, asal tepercaya, rate limit, role/approval, dan batas email/invitation untuk preview LAN dicatat; stack Bun/SvelteKit sudah berjalan. |
+| 2026-09-28 | FND-02 | REVIEW → IN_PROGRESS | Assertion browser untuk origin asing, logout, dan proteksi route ditambahkan. Run berhenti pada signup di `/register`; belum ada bukti untuk assertion baru. Port dev 3000 ditutup sesuai instruksi owner. |
 
 Format entri berikutnya: tanggal, ID, status lama → baru, hasil konkret, bukti validasi, dan hambatan jika ada. Jika pekerjaan berhenti di tengah task, catat langkah terakhir dan langkah berikutnya agar bisa dilanjutkan tanpa menebak.

@@ -16,5 +16,7 @@ test('owner onboarding, persistent CRUD, bilingual UI and mobile navigation',asy
  await page.goto('/dashboard');await page.screenshot({path:'test-results/dashboard-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'Open navigation'}).click();await page.locator('nav').getByRole('link',{name:'Business Profile',exact:true}).click();await expect(page.getByRole('heading',{name:'Business Profile',exact:true})).toBeVisible();await expect(page.locator('.sidebar')).not.toHaveClass(/mobile-open/);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);await page.screenshot({path:'test-results/company-mobile.png',fullPage:true});
  await page.goto('/dashboard');await page.getByRole('button',{name:'New task',exact:true}).click();await expect(page.getByRole('dialog')).toBeVisible();await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).not.toBeVisible();
+ const foreignOrigin=await page.request.post('/api/locale',{data:{locale:'id'},headers:{origin:'https://attacker.example'}});expect(foreignOrigin.status()).toBe(403);
+ await page.getByRole('button',{name:/Keluar|Sign out/}).click();await expect(page).toHaveURL(/\/login/);await page.goto('/dashboard');await expect(page).toHaveURL(/\/login/);
  expect(failures).toEqual([]);
 });
