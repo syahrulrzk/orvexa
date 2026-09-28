@@ -9,6 +9,8 @@ CREATE INDEX IF NOT EXISTS entities_workspace_kind ON entities(workspace_id,kind
 CREATE TABLE IF NOT EXISTS providers(workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id),model TEXT NOT NULL,secret TEXT NOT NULL,updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL REFERENCES workspaces(id),task_id TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('queued','running','waiting_approval','succeeded','failed','cancelled')),snapshot JSONB NOT NULL,result TEXT,error_code TEXT,input_tokens INT NOT NULL DEFAULT 0,output_tokens INT NOT NULL DEFAULT 0,cancel_requested BOOLEAN NOT NULL DEFAULT FALSE,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),FOREIGN KEY(workspace_id,task_id) REFERENCES entities(workspace_id,id),UNIQUE(workspace_id,id));
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_run_per_task ON runs(task_id) WHERE status IN ('queued','running','waiting_approval');
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS runs_idempotency_key ON runs(workspace_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE TABLE IF NOT EXISTS events(id BIGSERIAL PRIMARY KEY,workspace_id TEXT NOT NULL REFERENCES workspaces(id),run_id TEXT,actor TEXT NOT NULL,kind TEXT NOT NULL,message TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),FOREIGN KEY(workspace_id,run_id) REFERENCES runs(workspace_id,id));
 CREATE INDEX IF NOT EXISTS events_workspace ON events(workspace_id,id);
 CREATE TABLE IF NOT EXISTS outbox(id TEXT PRIMARY KEY,run_id TEXT NOT NULL REFERENCES runs(id),published_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT now());

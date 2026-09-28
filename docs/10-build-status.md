@@ -15,9 +15,9 @@ ORVEXA membantu UMKM memiliki karyawan AI. Fondasi bersifat umum untuk berbagai 
 - Konfigurasi OpenAI model/key terenkripsi. Secret tidak dikembalikan ke browser.
 - Kode worker BullMQ + LangGraph, checkpoint PostgreSQL, brief → maksimum dua kontribusi specialist → hasil akhir. Maksimum empat panggilan model per run, masing-masing maksimal 1.800 output tokens.
 - Approval sebelum pekerjaan AI, resume, cancel, workspace pause, cache hasil per step dan event Rooms.
-- Tugas berulang setiap 24 jam atau 7 hari; dedupe occurrence diuji. Worker harus dijalankan agar antrean/jadwal diproses.
+- Tugas berulang setiap 24 jam atau 7 hari; dedupe occurrence diuji. Start run menerima header `Idempotency-Key`: retry dengan key sama membalas run yang sama tanpa membuat run baru, termasuk saat run sudah terminal. Worker harus dijalankan agar antrean/jadwal diproses.
 - Dashboard berbasis data nyata, Activity, Rooms, penggunaan token, Virtual Office dasar, SSE dan polling fallback.
-- Preview web tersedia di `http://172.16.19.235:3000`. Akun administrator adalah owner workspace, bukan global superadmin lintas tenant.
+- Preview LAN memakai `http://172.16.19.235:3000` saat server dijalankan; saat ini server dihentikan atas permintaan owner. Akun administrator adalah owner workspace, bukan global superadmin lintas tenant.
 
 ## Bukti validasi
 
@@ -26,12 +26,12 @@ ORVEXA membantu UMKM memiliki karyawan AI. Fondasi bersifat umum untuk berbagai 
 | Svelte + TypeScript | 0 error, 0 warning | `bun run check` |
 | Production build | Lulus; warning dependency bundler tidak menghalangi build | `bun run build` |
 | Unit | 4 lulus | `tests/unit.test.ts` |
-| PostgreSQL/Redis/LangGraph integration | 9 lulus | `tests/integration.test.ts` |
-| Chromium E2E lewat IP LAN | 1 skenario lulus | `tests/browser/app.spec.ts` |
+| PostgreSQL/Redis/LangGraph integration | 11 lulus (termasuk 2 uji idempotency) | `tests/integration.test.ts` |
+| Chromium E2E lewat IP LAN | Skenario dasar pernah lulus; run terbaru berhenti di signup sebelum assertion logout/origin | `tests/browser/app.spec.ts` |
 
 Skenario browser mencakup daftar akun, onboarding, starter team, CRUD knowledge/project/task, persistence setelah reload, perubahan status, error provider belum dikonfigurasi, pergantian bahasa, navigasi halaman, mobile tanpa overflow, dan dialog Escape.
 
-Integration menguji isolasi tenant, referensi silang, secret masking, concurrent start dedupe, graph multi-agent, hasil tidak dieksekusi ulang, interrupt/resume pada instance graph baru, duplicate approval, cancel, pause, queue Redis, dan jadwal atomic. Panggilan model menggunakan stub yang diinjeksi oleh tes; tidak ada bukti keberhasilan provider/model berbayar nyata.
+Integration menguji isolasi tenant, referensi silang, secret masking, concurrent start dedupe, graph multi-agent, hasil tidak dieksekusi ulang, interrupt/resume pada instance graph baru, duplicate approval, cancel, pause, queue Redis, jadwal atomic, serta replay/klaim Idempotency-Key dan penolakan key tidak valid. Panggilan model menggunakan stub yang diinjeksi oleh tes; tidak ada bukti keberhasilan provider/model berbayar nyata.
 
 ## Batas yang masih nyata
 
